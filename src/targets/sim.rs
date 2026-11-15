@@ -1,21 +1,34 @@
 //! `sim` is a simulated device. It is used to test how the host runs code on devices.
 //!
 //! It works in two steps:
-//! - [`compile`] turns the body of an `on` block into a [`Program`], the IR of this device.
+//! - [`generate`] turns the body of an `on` block into a [`Program`], the IR of this device.
 //! - [`simulate`] runs a [`Program`]. Each line that the device prints starts with `sim: `.
 
 use std::fmt;
 use std::io::Write;
 
 use crate::ast::Statement;
-use crate::targets::Target;
+use crate::targets::{Kernel, Target, TargetError};
 
 /// The target that compiles and simulates `on sim` blocks.
 pub struct SimTarget;
 
 impl Target for SimTarget {
-    fn run(&self, body: &[Statement], output: &mut dyn Write) {
-        simulate(&compile(body), output);
+    fn compile(&self, body: &[Statement]) -> Result<Box<dyn Kernel>, TargetError> {
+        Ok(Box::new(SimKernel {
+            program: generate(body),
+        }))
+    }
+}
+
+/// An `on sim` block, compiled to a `sim` program.
+struct SimKernel {
+    program: Program,
+}
+
+impl Kernel for SimKernel {
+    fn call(&self, output: &mut dyn Write) {
+        simulate(&self.program, output);
     }
 }
 
@@ -44,7 +57,7 @@ impl fmt::Display for Program {
 }
 
 /// Generates a `sim` program from the body of an `on sim` block.
-pub fn compile(body: &[Statement]) -> Program {
+pub fn generate(body: &[Statement]) -> Program {
     let instructions = body
         .iter()
         .map(|statement| match statement {
@@ -78,24 +91,24 @@ mod tests {
     }
 
     #[test]
-    fn compile_print_statements() {
+    fn generate_print_statements() {
         let body = vec![Statement::Print(1), Statement::Print(2)];
-        assert_eq!(compile(&body).to_string(), "print 1\nprint 2\n");
+        assert_eq!(generate(&body).to_string(), "print 1\nprint 2\n");
     }
 
     #[test]
-    fn compile_empty_body() {
-        assert_eq!(compile(&[]).to_string(), "");
+    fn generate_empty_body() {
+        assert_eq!(generate(&[]).to_string(), "");
     }
 
     #[test]
     #[should_panic(expected = "chaining")]
-    fn compile_nested_on_block_is_not_supported_yet() {
+    fn generate_nested_on_block_is_not_supported_yet() {
         let body = vec![Statement::On {
             target: "sim".to_string(),
             body: vec![],
         }];
-        compile(&body);
+        generate(&body);
     }
 
     #[test]
@@ -104,5 +117,16 @@ mod tests {
             instructions: vec![Instruction::Print(1), Instruction::Print(2)],
         };
         assert_eq!(simulate_to_string(&program), "sim: 1\nsim: 2\n");
+    }
+
+    #[test]
+    fn kernel_simulates_the_generated_program() {
+        let body = vec![Statement::Print(1)];
+        let kernel = SimTarget
+            .compile(&body)
+            .expect("sim should compile print statements");
+        let mut output = Vec::new();
+        kernel.call(&mut output);
+        assert_eq!(output, b"sim: 1\n");
     }
 }

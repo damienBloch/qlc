@@ -1,4 +1,4 @@
-//! The abstract syntax tree (AST). The parser produces it and the interpreter consumes it.
+//! The abstract syntax tree (AST). The parser produces it and the outliner consumes it.
 //! The targets also consume the body of `on` blocks.
 
 #[derive(Debug, PartialEq, Eq)]

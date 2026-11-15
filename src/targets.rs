@@ -1,20 +1,41 @@
 //! Targets are the devices that run `on` blocks, such as a sequencer or an FPGA.
 //!
-//! The interpreter only knows the [`Target`] trait and the [`Registry`].
+//! A target works in two steps:
+//! - At compile time, [`Target::compile`] turns the body of an `on` block into a [`Kernel`].
+//! - At runtime, the interpreter calls [`Kernel::call`] each time the block runs.
+//!
+//! The rest of qlc only knows the [`Target`] and [`Kernel`] traits and the [`Registry`].
 //! Each target has its own module, with its own IR, code generation and execution.
 
 pub mod sim;
 
 use std::collections::HashMap;
+use std::fmt;
 use std::io::Write;
 
 use crate::ast::Statement;
 
 /// A device that can run the body of an `on` block.
 pub trait Target {
-    /// Generates a program for this device from `body`, and runs it.
-    /// What the device prints is written to `output`.
-    fn run(&self, body: &[Statement], output: &mut dyn Write);
+    /// Compiles `body` for this device.
+    /// Returns an error if the device cannot run `body`.
+    fn compile(&self, body: &[Statement]) -> Result<Box<dyn Kernel>, TargetError>;
+}
+
+/// An `on` block compiled by a target.
+pub trait Kernel {
+    /// Runs the block on the device. What the device prints is written to `output`.
+    fn call(&self, output: &mut dyn Write);
+}
+
+/// An error found by a target when it compiles an `on` block.
+#[derive(Debug, PartialEq, Eq)]
+pub struct TargetError(pub String);
+
+impl fmt::Display for TargetError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
 /// The targets that `on` blocks can use, by name.
@@ -56,18 +77,20 @@ impl Registry {
 mod tests {
     use super::*;
 
-    /// A target that does nothing.
-    struct NoopTarget;
+    /// A target that always fails to compile.
+    struct FailingTarget;
 
-    impl Target for NoopTarget {
-        fn run(&self, _body: &[Statement], _output: &mut dyn Write) {}
+    impl Target for FailingTarget {
+        fn compile(&self, _body: &[Statement]) -> Result<Box<dyn Kernel>, TargetError> {
+            Err(TargetError("failing cannot compile".to_string()))
+        }
     }
 
     #[test]
     fn get_returns_an_added_target() {
         let mut registry = Registry::empty();
-        registry.add("noop", Box::new(NoopTarget));
-        assert!(registry.get("noop").is_some());
+        registry.add("failing", Box::new(FailingTarget));
+        assert!(registry.get("failing").is_some());
     }
 
     #[test]
@@ -81,10 +104,10 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "target `noop` should be registered only once")]
+    #[should_panic(expected = "target `failing` should be registered only once")]
     fn adding_the_same_name_twice_panics() {
         let mut registry = Registry::empty();
-        registry.add("noop", Box::new(NoopTarget));
-        registry.add("noop", Box::new(NoopTarget));
+        registry.add("failing", Box::new(FailingTarget));
+        registry.add("failing", Box::new(FailingTarget));
     }
 }

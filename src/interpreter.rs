@@ -1,18 +1,15 @@
-//! The interpreter is the last stage. It executes a program from its AST.
+//! The interpreter is the last stage. It executes a program from its host IR.
 
 use std::collections::HashSet;
 use std::fmt;
 use std::io::Write;
 
-use crate::ast::{Function, Program, Statement};
-use crate::targets::Registry;
+use crate::host_ir::{Function, Program, Statement};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum RunError {
     MissingMain,
     DuplicateFunction(String),
-    /// An `on` block uses a target that is not in the registry.
-    UnknownTarget(String),
 }
 
 impl fmt::Display for RunError {
@@ -22,30 +19,27 @@ impl fmt::Display for RunError {
             RunError::DuplicateFunction(name) => {
                 write!(f, "function `{name}` is defined more than once")
             }
-            RunError::UnknownTarget(name) => write!(f, "unknown target `{name}`"),
         }
     }
 }
 
 /// Runs the `main` function of `program`. What the program prints is written to `output`.
 ///
-/// `on` blocks run on the targets of `targets`.
 /// The program is checked before it runs, so an error is returned before anything is printed.
-pub fn run(program: &Program, targets: &Registry, output: &mut impl Write) -> Result<(), RunError> {
+pub fn run(program: &Program, output: &mut impl Write) -> Result<(), RunError> {
     check_no_duplicate_functions(program)?;
-    check_targets_exist(program, targets)?;
     let main = program
-        .functions
+        .functions()
         .iter()
         .find(|function| function.name == "main")
         .ok_or(RunError::MissingMain)?;
-    call(main, targets, output);
+    call(program, main, output);
     Ok(())
 }
 
 fn check_no_duplicate_functions(program: &Program) -> Result<(), RunError> {
     let mut names = HashSet::new();
-    for function in &program.functions {
+    for function in program.functions() {
         if !names.insert(function.name.as_str()) {
             return Err(RunError::DuplicateFunction(function.name.clone()));
         }
@@ -53,34 +47,17 @@ fn check_no_duplicate_functions(program: &Program) -> Result<(), RunError> {
     Ok(())
 }
 
-/// Checks that the `on` blocks of all functions use targets of `targets`.
-///
-/// Only the `on` blocks run by the host are checked.
-/// An `on` block nested in another one is run by a device, which is not supported yet.
-fn check_targets_exist(program: &Program, targets: &Registry) -> Result<(), RunError> {
-    for function in &program.functions {
-        for statement in &function.body {
-            if let Statement::On { target, .. } = statement
-                && targets.get(target).is_none()
-            {
-                return Err(RunError::UnknownTarget(target.clone()));
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Calls `function`.
-fn call(function: &Function, targets: &Registry, output: &mut impl Write) {
+/// Calls `function`, which is a function of `program`.
+fn call(program: &Program, function: &Function, output: &mut impl Write) {
     for statement in &function.body {
         match statement {
             Statement::Print(value) => {
                 writeln!(output, "{value}").expect("writing the program output should succeed")
             }
-            Statement::On { target, body } => targets
-                .get(target)
-                .expect("targets should be checked before the program runs")
-                .run(body, output),
+            Statement::CallKernel(id) => program
+                .kernel(*id)
+                .expect("the outliner should create a kernel for each `CallKernel` statement")
+                .call(output),
         }
     }
 }
@@ -88,56 +65,51 @@ fn call(function: &Function, targets: &Registry, output: &mut impl Write) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::targets::Target;
+    use crate::host_ir::KernelId;
+    use crate::targets::Kernel;
 
-    /// A target that writes the statements it receives, such as `fake: [Print(1)]`.
-    /// It lets the tests check what the interpreter sends to a target.
-    struct FakeTarget;
+    /// A kernel that writes `kernel <name>`.
+    struct FakeKernel {
+        name: &'static str,
+    }
 
-    impl Target for FakeTarget {
-        fn run(&self, body: &[Statement], output: &mut dyn Write) {
-            writeln!(output, "fake: {body:?}").expect("writing to a Vec should succeed");
+    impl Kernel for FakeKernel {
+        fn call(&self, output: &mut dyn Write) {
+            writeln!(output, "kernel {}", self.name).expect("writing to a Vec should succeed");
         }
     }
 
-    /// Runs `program` with one target, `fake`, and returns what it printed.
+    /// Runs `program` and returns what it printed.
     fn run_to_string(program: &Program) -> Result<String, RunError> {
-        let mut targets = Registry::empty();
-        targets.add("fake", Box::new(FakeTarget));
         let mut output = Vec::new();
-        run(program, &targets, &mut output)?;
+        run(program, &mut output)?;
         Ok(String::from_utf8(output).expect("the output should be UTF-8"))
     }
 
-    /// An `on` block that runs `body` on `target`.
-    fn on(target: &str, body: Vec<Statement>) -> Statement {
-        Statement::On {
-            target: target.to_string(),
+    /// A program with only a `main` function, whose body is `body`, and the kernels `kernels`.
+    fn main_with_body_and_kernels(body: Vec<Statement>, kernels: Vec<Box<dyn Kernel>>) -> Program {
+        let main = Function {
+            name: "main".to_string(),
             body,
-        }
+        };
+        Program::new(vec![main], kernels)
     }
 
-    /// A program with only a `main` function, whose body is `body`.
+    /// A program with only a `main` function, whose body is `body`, and no kernels.
     fn main_with_body(body: Vec<Statement>) -> Program {
-        Program {
-            functions: vec![Function {
-                name: "main".to_string(),
-                body,
-            }],
-        }
+        main_with_body_and_kernels(body, vec![])
     }
 
-    /// A program with empty functions named `function_names`.
+    /// A program with empty functions named `function_names`, and no kernels.
     fn program(function_names: &[&str]) -> Program {
-        Program {
-            functions: function_names
-                .iter()
-                .map(|name| Function {
-                    name: name.to_string(),
-                    body: vec![],
-                })
-                .collect(),
-        }
+        let functions = function_names
+            .iter()
+            .map(|name| Function {
+                name: name.to_string(),
+                body: vec![],
+            })
+            .collect();
+        Program::new(functions, vec![])
     }
 
     #[test]
@@ -175,49 +147,32 @@ mod tests {
     }
 
     #[test]
-    fn on_block_is_sent_to_its_target() {
-        let body = vec![
-            Statement::Print(1),
-            on("fake", vec![Statement::Print(2)]),
-            Statement::Print(3),
-        ];
-        assert_eq!(
-            run_to_string(&main_with_body(body)),
-            Ok("1
-fake: [Print(2)]
-3
-"
-            .to_string())
-        );
-    }
-
-    #[test]
-    fn unknown_target_is_an_error_before_anything_runs() {
-        let body = vec![Statement::Print(1), on("unknown", vec![])];
-        assert_eq!(
-            run_to_string(&main_with_body(body)),
-            Err(RunError::UnknownTarget("unknown".to_string()))
-        );
-    }
-
-    #[test]
-    fn unknown_target_in_a_function_that_is_not_called_is_an_error() {
-        let program = Program {
-            functions: vec![
-                Function {
-                    name: "main".to_string(),
-                    body: vec![],
-                },
-                Function {
-                    name: "helper".to_string(),
-                    body: vec![on("unknown", vec![])],
-                },
+    fn call_kernel_calls_the_kernel_with_this_id() {
+        let program = main_with_body_and_kernels(
+            vec![
+                Statement::Print(1),
+                Statement::CallKernel(KernelId(1)),
+                Statement::CallKernel(KernelId(0)),
+                Statement::CallKernel(KernelId(1)),
             ],
-        };
+            vec![
+                Box::new(FakeKernel { name: "a" }),
+                Box::new(FakeKernel { name: "b" }),
+            ],
+        );
         assert_eq!(
             run_to_string(&program),
-            Err(RunError::UnknownTarget("unknown".to_string()))
+            Ok("1\nkernel b\nkernel a\nkernel b\n".to_string())
         );
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "the outliner should create a kernel for each `CallKernel` statement"
+    )]
+    fn call_of_a_missing_kernel_panics() {
+        let program = main_with_body(vec![Statement::CallKernel(KernelId(0))]);
+        let _ = run_to_string(&program);
     }
 
     #[test]

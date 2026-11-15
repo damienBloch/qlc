@@ -1,13 +1,16 @@
 //! The qlc compiler and interpreter.
 //!
 //! The work is split in stages. Each stage consumes the output of the previous one:
-//! source text -> [`lexer`] -> tokens -> [`parser`] -> AST -> [`interpreter`].
-//! The interpreter sends the body of `on` blocks to the [`targets`].
+//! source text -> [`lexer`] -> tokens -> [`parser`] -> AST -> [`outliner`] -> host IR
+//! -> [`interpreter`].
+//! The outliner sends the body of `on` blocks to the [`targets`].
 //! See `docs/architecture.md` for details.
 
 pub mod ast;
+pub mod host_ir;
 pub mod interpreter;
 pub mod lexer;
+pub mod outliner;
 pub mod parser;
 pub mod targets;
 
@@ -19,6 +22,7 @@ use std::io::Write;
 pub enum Error {
     Lex(lexer::LexError),
     Parse(parser::ParseError),
+    Outline(outliner::OutlineError),
     Run(interpreter::RunError),
 }
 
@@ -27,6 +31,7 @@ impl fmt::Display for Error {
         match self {
             Error::Lex(error) => write!(f, "{error}"),
             Error::Parse(error) => write!(f, "{error}"),
+            Error::Outline(error) => write!(f, "{error}"),
             Error::Run(error) => write!(f, "{error}"),
         }
     }
@@ -36,5 +41,7 @@ impl fmt::Display for Error {
 pub fn run_source(source: &str, output: &mut impl Write) -> Result<(), Error> {
     let tokens = lexer::tokenize(source).map_err(Error::Lex)?;
     let program = parser::parse(&tokens).map_err(Error::Parse)?;
-    interpreter::run(&program, &targets::Registry::builtin(), output).map_err(Error::Run)
+    let program =
+        outliner::outline(&program, &targets::Registry::builtin()).map_err(Error::Outline)?;
+    interpreter::run(&program, output).map_err(Error::Run)
 }
