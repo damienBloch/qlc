@@ -89,6 +89,14 @@ fn missing_main() {
 }
 
 #[test]
+fn duplicate_function() {
+    assert_error(
+        &run_program("duplicate_function.ql"),
+        "function `helper` is defined more than once",
+    );
+}
+
+#[test]
 fn syntax_error() {
     assert_error(
         &run_program("missing_closing_brace.ql"),

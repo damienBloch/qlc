@@ -14,23 +14,29 @@ flowchart LR
     source["Source text<br/>(String)"]
     tokens["Tokens<br/>(Vec&lt;Token&gt;)"]
     ast["AST<br/>(ast::Program)"]
+    rast["Resolved AST<br/>(resolved_ast::Program)"]
     hir["Host IR<br/>(host_ir::Program)"]
     result["Result<br/>(exit code)"]
 
     source -- "lexer::tokenize" --> tokens
     tokens -- "parser::parse" --> ast
-    ast -- "outliner::outline" --> hir
+    ast -- "resolver::resolve" --> rast
+    rast -- "outliner::outline" --> hir
     hir -- "interpreter::run" --> result
-    ast -. "body of on blocks" .-> targets["Targets<br/>(see below)"]
+    rast -. "body of on blocks" .-> targets["Targets<br/>(see below)"]
     targets -. "kernels" .-> hir
 ```
 
-| Stage       | File                 | Input                | Output              |
-|-------------|----------------------|----------------------|---------------------|
-| Lexer       | `src/lexer.rs`       | source text          | `Vec<Token>`        |
-| Parser      | `src/parser.rs`      | `&[Token]`           | `ast::Program`      |
-| Outliner    | `src/outliner.rs`    | `&ast::Program`      | `host_ir::Program`  |
-| Interpreter | `src/interpreter.rs` | `&host_ir::Program`  | `()`                |
+| Stage       | File                 | Input                    | Output                  |
+|-------------|----------------------|--------------------------|-------------------------|
+| Lexer       | `src/lexer.rs`       | source text              | `Vec<Token>`            |
+| Parser      | `src/parser.rs`      | `&[Token]`               | `ast::Program`          |
+| Resolver    | `src/resolver.rs`    | `ast::Program`           | `resolved_ast::Program` |
+| Outliner    | `src/outliner.rs`    | `&resolved_ast::Program` | `host_ir::Program`      |
+| Interpreter | `src/interpreter.rs` | `&host_ir::Program`      | `()`                    |
+
+The resolver checks the names of the program: function names must be unique,
+and there must be a `main` function. The resolved AST stores which function is `main`.
 
 The outliner also takes the registry of targets.
 It takes each `on` block out of its function and sends its body to its target,
@@ -41,7 +47,8 @@ The interpreter also takes an output writer (`&mut impl Write`).
 `print` and the kernels write to it.
 The command line passes stdout, and the unit tests pass a `Vec<u8>` to check the output.
 
-The AST types are in `src/ast.rs`. They are shared by the parser, the outliner and the targets.
+The AST types are in `src/ast.rs`. They are shared by the parser, the resolver, the outliner and the targets.
+The resolved AST types are in `src/resolved_ast.rs`. They are shared by the resolver and the outliner.
 The host IR types are in `src/host_ir.rs`. They are shared by the outliner and the interpreter.
 The host IR is the AST where each `on` block is replaced by a call to its kernel.
 
@@ -115,14 +122,14 @@ Not supported yet:
 
 ## Errors
 
-Each stage has its own error type: `LexError`, `ParseError`, `OutlineError` and `RunError`.
+Each stage that can fail has its own error type: `LexError`, `ParseError`, `ResolveError` and `OutlineError`.
 `src/lib.rs` wraps them in one `Error` type.
 
 There are two kinds of problems:
 
 - **Errors in the user's program.** A stage returns an `Err`.
-  The outliner and the interpreter check the program before running it,
-  so an error is reported before anything is printed.
+  As many checks as possible are done before the interpreter, so an error is reported before anything is printed.
+  The interpreter cannot fail.
   The command line prints `error: <message>` on stderr and exits with code 1.
 - **Bugs in qlc.** The code panics, with `expect` and a reason.
   Features that are not decided yet use `todo!`.

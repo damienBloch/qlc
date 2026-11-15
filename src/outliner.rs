@@ -1,4 +1,4 @@
-//! The outliner is the third stage. It turns the AST into the host IR.
+//! The outliner is the fourth stage. It turns the resolved AST into the host IR.
 //!
 //! It takes each `on` block out of its function and sends its body to its target,
 //! which compiles it to a kernel. In the host IR, the `on` block is replaced by a call
@@ -8,6 +8,7 @@ use std::fmt;
 
 use crate::ast;
 use crate::host_ir::{self, KernelId};
+use crate::resolved_ast;
 use crate::targets::{Kernel, Registry, TargetError};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -30,17 +31,18 @@ impl fmt::Display for OutlineError {
 /// Outlines the `on` blocks of `program`. They are compiled by the targets of `targets`.
 ///
 /// The `on` blocks of all functions are compiled, even if the function is never called.
+/// The functions keep their order, so the `main` function keeps its id.
 pub fn outline(
-    program: &ast::Program,
+    program: &resolved_ast::Program,
     targets: &Registry,
 ) -> Result<host_ir::Program, OutlineError> {
     let mut kernels = Vec::new();
     let functions = program
-        .functions
+        .functions()
         .iter()
         .map(|function| outline_function(function, targets, &mut kernels))
         .collect::<Result<_, _>>()?;
-    Ok(host_ir::Program::new(functions, kernels))
+    Ok(host_ir::Program::new(functions, program.main(), kernels))
 }
 
 /// Outlines the `on` blocks of `function`. Their kernels are added to `kernels`.
@@ -88,6 +90,7 @@ mod tests {
     use std::io::Write;
 
     use super::*;
+    use crate::resolved_ast::FunctionId;
     use crate::targets::Target;
 
     /// A target whose kernels write the statements they were compiled from,
@@ -122,7 +125,9 @@ mod tests {
     }
 
     /// Outlines `program` with two targets: `fake` and `failing`.
-    fn outline_with_test_targets(program: &ast::Program) -> Result<host_ir::Program, OutlineError> {
+    fn outline_with_test_targets(
+        program: &resolved_ast::Program,
+    ) -> Result<host_ir::Program, OutlineError> {
         let mut targets = Registry::empty();
         targets.add("fake", Box::new(FakeTarget));
         targets.add("failing", Box::new(FailingTarget));
@@ -139,14 +144,16 @@ mod tests {
         String::from_utf8(output).expect("the output should be UTF-8")
     }
 
-    /// A program with only a `main` function, whose body is `body`.
-    fn main_with_body(body: Vec<ast::Statement>) -> ast::Program {
-        ast::Program {
-            functions: vec![ast::Function {
-                name: "main".to_string(),
-                body,
-            }],
+    fn function(name: &str, body: Vec<ast::Statement>) -> ast::Function {
+        ast::Function {
+            name: name.to_string(),
+            body,
         }
+    }
+
+    /// A program with only a `main` function, whose body is `body`.
+    fn main_with_body(body: Vec<ast::Statement>) -> resolved_ast::Program {
+        resolved_ast::Program::new(vec![function("main", body)], FunctionId(0))
     }
 
     /// An `on` block that runs `body` on `target`.
@@ -222,22 +229,31 @@ mod tests {
 
     #[test]
     fn unknown_target_in_a_function_that_is_not_called_is_an_error() {
-        let program = ast::Program {
-            functions: vec![
-                ast::Function {
-                    name: "main".to_string(),
-                    body: vec![],
-                },
-                ast::Function {
-                    name: "helper".to_string(),
-                    body: vec![on("unknown", vec![])],
-                },
+        let program = resolved_ast::Program::new(
+            vec![
+                function("main", vec![]),
+                function("helper", vec![on("unknown", vec![])]),
             ],
-        };
+            FunctionId(0),
+        );
         assert_eq!(
             outline_with_test_targets(&program).err(),
             Some(OutlineError::UnknownTarget("unknown".to_string()))
         );
+    }
+
+    #[test]
+    fn main_keeps_its_id() {
+        let program = resolved_ast::Program::new(
+            vec![
+                function("helper", vec![ast::Statement::Print(1)]),
+                function("main", vec![ast::Statement::Print(2)]),
+            ],
+            FunctionId(1),
+        );
+        let program = outline_with_test_targets(&program).expect("the program should compile");
+        assert_eq!(program.main().name, "main");
+        assert_eq!(program.main().body, [host_ir::Statement::Print(2)]);
     }
 
     #[test]

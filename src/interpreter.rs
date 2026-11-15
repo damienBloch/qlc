@@ -1,50 +1,14 @@
 //! The interpreter is the last stage. It executes a program from its host IR.
+//!
+//! The previous stages check the program, so running it cannot fail.
 
-use std::collections::HashSet;
-use std::fmt;
 use std::io::Write;
 
 use crate::host_ir::{Function, Program, Statement};
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum RunError {
-    MissingMain,
-    DuplicateFunction(String),
-}
-
-impl fmt::Display for RunError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RunError::MissingMain => write!(f, "no `main` function found"),
-            RunError::DuplicateFunction(name) => {
-                write!(f, "function `{name}` is defined more than once")
-            }
-        }
-    }
-}
-
 /// Runs the `main` function of `program`. What the program prints is written to `output`.
-///
-/// The program is checked before it runs, so an error is returned before anything is printed.
-pub fn run(program: &Program, output: &mut impl Write) -> Result<(), RunError> {
-    check_no_duplicate_functions(program)?;
-    let main = program
-        .functions()
-        .iter()
-        .find(|function| function.name == "main")
-        .ok_or(RunError::MissingMain)?;
-    call(program, main, output);
-    Ok(())
-}
-
-fn check_no_duplicate_functions(program: &Program) -> Result<(), RunError> {
-    let mut names = HashSet::new();
-    for function in program.functions() {
-        if !names.insert(function.name.as_str()) {
-            return Err(RunError::DuplicateFunction(function.name.clone()));
-        }
-    }
-    Ok(())
+pub fn run(program: &Program, output: &mut impl Write) {
+    call(program, program.main(), output);
 }
 
 /// Calls `function`, which is a function of `program`.
@@ -66,6 +30,7 @@ fn call(program: &Program, function: &Function, output: &mut impl Write) {
 mod tests {
     use super::*;
     use crate::host_ir::KernelId;
+    use crate::resolved_ast::FunctionId;
     use crate::targets::Kernel;
 
     /// A kernel that writes `kernel <name>`.
@@ -80,19 +45,22 @@ mod tests {
     }
 
     /// Runs `program` and returns what it printed.
-    fn run_to_string(program: &Program) -> Result<String, RunError> {
+    fn run_to_string(program: &Program) -> String {
         let mut output = Vec::new();
-        run(program, &mut output)?;
-        Ok(String::from_utf8(output).expect("the output should be UTF-8"))
+        run(program, &mut output);
+        String::from_utf8(output).expect("the output should be UTF-8")
+    }
+
+    fn function(name: &str, body: Vec<Statement>) -> Function {
+        Function {
+            name: name.to_string(),
+            body,
+        }
     }
 
     /// A program with only a `main` function, whose body is `body`, and the kernels `kernels`.
     fn main_with_body_and_kernels(body: Vec<Statement>, kernels: Vec<Box<dyn Kernel>>) -> Program {
-        let main = Function {
-            name: "main".to_string(),
-            body,
-        };
-        Program::new(vec![main], kernels)
+        Program::new(vec![function("main", body)], FunctionId(0), kernels)
     }
 
     /// A program with only a `main` function, whose body is `body`, and no kernels.
@@ -100,36 +68,29 @@ mod tests {
         main_with_body_and_kernels(body, vec![])
     }
 
-    /// A program with empty functions named `function_names`, and no kernels.
-    fn program(function_names: &[&str]) -> Program {
-        let functions = function_names
-            .iter()
-            .map(|name| Function {
-                name: name.to_string(),
-                body: vec![],
-            })
-            .collect();
-        Program::new(functions, vec![])
+    #[test]
+    fn runs_empty_main() {
+        assert_eq!(run_to_string(&main_with_body(vec![])), "");
     }
 
     #[test]
-    fn runs_program_with_main() {
-        assert_eq!(run_to_string(&program(&["main"])), Ok(String::new()));
-    }
-
-    #[test]
-    fn runs_program_with_main_and_other_functions() {
-        assert_eq!(
-            run_to_string(&program(&["helper", "main"])),
-            Ok(String::new())
+    fn runs_only_the_main_function() {
+        let program = Program::new(
+            vec![
+                function("helper", vec![Statement::Print(1)]),
+                function("main", vec![Statement::Print(2)]),
+            ],
+            FunctionId(1),
+            vec![],
         );
+        assert_eq!(run_to_string(&program), "2\n");
     }
 
     #[test]
     fn print_writes_the_value_on_its_own_line() {
         assert_eq!(
             run_to_string(&main_with_body(vec![Statement::Print(42)])),
-            Ok("42\n".to_string())
+            "42\n"
         );
     }
 
@@ -142,7 +103,7 @@ mod tests {
         ];
         assert_eq!(
             run_to_string(&main_with_body(body)),
-            Ok("1\n9223372036854775807\n0\n".to_string())
+            "1\n9223372036854775807\n0\n"
         );
     }
 
@@ -160,10 +121,7 @@ mod tests {
                 Box::new(FakeKernel { name: "b" }),
             ],
         );
-        assert_eq!(
-            run_to_string(&program),
-            Ok("1\nkernel b\nkernel a\nkernel b\n".to_string())
-        );
+        assert_eq!(run_to_string(&program), "1\nkernel b\nkernel a\nkernel b\n");
     }
 
     #[test]
@@ -172,22 +130,12 @@ mod tests {
     )]
     fn call_of_a_missing_kernel_panics() {
         let program = main_with_body(vec![Statement::CallKernel(KernelId(0))]);
-        let _ = run_to_string(&program);
+        run_to_string(&program);
     }
 
     #[test]
-    fn missing_main_is_an_error() {
-        assert_eq!(
-            run_to_string(&program(&["helper"])),
-            Err(RunError::MissingMain)
-        );
-    }
-
-    #[test]
-    fn duplicate_function_is_an_error() {
-        assert_eq!(
-            run_to_string(&program(&["main", "main"])),
-            Err(RunError::DuplicateFunction("main".to_string()))
-        );
+    #[should_panic(expected = "the `main` function should be one of the functions of the program")]
+    fn program_with_an_invalid_main_id_panics() {
+        Program::new(vec![], FunctionId(0), vec![]);
     }
 }
