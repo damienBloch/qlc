@@ -9,6 +9,8 @@ pub enum Token {
     Fn,
     /// The `print` keyword.
     Print,
+    /// The `on` keyword, which starts a block that runs on a target device.
+    On,
     Identifier(String),
     /// A non-negative integer literal, such as `42`.
     /// Negative numbers will be written with a unary minus, which is not supported yet.
@@ -25,6 +27,7 @@ impl fmt::Display for Token {
         match self {
             Token::Fn => write!(f, "`fn`"),
             Token::Print => write!(f, "`print`"),
+            Token::On => write!(f, "`on`"),
             Token::Identifier(name) => write!(f, "identifier `{name}`"),
             Token::Integer(value) => write!(f, "integer `{value}`"),
             Token::OpenParen => write!(f, "`(`"),
@@ -110,6 +113,7 @@ fn keyword_or_identifier(word: String) -> Token {
     match word.as_str() {
         "fn" => Token::Fn,
         "print" => Token::Print,
+        "on" => Token::On,
         _ => Token::Identifier(word),
     }
 }
@@ -168,8 +172,14 @@ mod tests {
     }
 
     #[test]
+    fn on_keyword() {
+        assert_eq!(tokenize("on"), Ok(vec![Token::On]));
+    }
+
+    #[test]
     fn keyword_prefix_is_an_identifier() {
         assert_eq!(tokenize("fnord"), Ok(vec![identifier("fnord")]));
+        assert_eq!(tokenize("once"), Ok(vec![identifier("once")]));
     }
 
     #[test]

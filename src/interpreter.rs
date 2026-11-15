@@ -52,6 +52,7 @@ fn call(function: &Function, output: &mut impl Write) {
             Statement::Print(value) => {
                 writeln!(output, "{value}").expect("writing the program output should succeed")
             }
+            Statement::On { .. } => todo!("run `on` blocks on their target"),
         }
     }
 }

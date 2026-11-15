@@ -4,8 +4,11 @@
 //!
 //! ```text
 //! program   = function*
-//! function  = "fn" identifier "(" ")" "{" statement* "}"
-//! statement = "print" "(" integer ")" ";"
+//! function  = "fn" identifier "(" ")" block
+//! block     = "{" statement* "}"
+//! statement = print | on
+//! print     = "print" "(" integer ")" ";"
+//! on        = "on" identifier block
 //! ```
 
 use std::fmt;
@@ -59,22 +62,50 @@ impl Parser<'_> {
         let name = self.expect_identifier()?;
         self.expect(&Token::OpenParen)?;
         self.expect(&Token::CloseParen)?;
-        self.expect(&Token::OpenBrace)?;
-        let mut body = Vec::new();
-        while self.peek().is_some_and(|token| *token != Token::CloseBrace) {
-            body.push(self.parse_statement()?);
-        }
-        self.expect(&Token::CloseBrace)?;
+        let body = self.parse_block()?;
         Ok(Function { name, body })
     }
 
+    /// Parses a list of statements between braces.
+    fn parse_block(&mut self) -> Result<Vec<Statement>, ParseError> {
+        self.expect(&Token::OpenBrace)?;
+        let mut statements = Vec::new();
+        while self.peek().is_some_and(|token| *token != Token::CloseBrace) {
+            statements.push(self.parse_statement()?);
+        }
+        self.expect(&Token::CloseBrace)?;
+        Ok(statements)
+    }
+
     fn parse_statement(&mut self) -> Result<Statement, ParseError> {
+        let expected = "statement";
+        match self.peek() {
+            Some(Token::Print) => self.parse_print(),
+            Some(Token::On) => self.parse_on(),
+            Some(found) => Err(ParseError::UnexpectedToken {
+                expected: expected.to_string(),
+                found: found.clone(),
+            }),
+            None => Err(ParseError::UnexpectedEndOfInput {
+                expected: expected.to_string(),
+            }),
+        }
+    }
+
+    fn parse_print(&mut self) -> Result<Statement, ParseError> {
         self.expect(&Token::Print)?;
         self.expect(&Token::OpenParen)?;
         let value = self.expect_integer()?;
         self.expect(&Token::CloseParen)?;
         self.expect(&Token::Semicolon)?;
         Ok(Statement::Print(value))
+    }
+
+    fn parse_on(&mut self) -> Result<Statement, ParseError> {
+        self.expect(&Token::On)?;
+        let target = self.expect_identifier()?;
+        let body = self.parse_block()?;
+        Ok(Statement::On { target, body })
     }
 
     /// Consumes the next token if it is equal to `expected`. Returns an error otherwise.
@@ -249,8 +280,73 @@ mod tests {
         assert_eq!(
             parse_source("fn main() { x }"),
             Err(ParseError::UnexpectedToken {
-                expected: "`print`".to_string(),
+                expected: "statement".to_string(),
                 found: Token::Identifier("x".to_string()),
+            })
+        );
+    }
+
+    /// An `on` block that runs `body` on `target`.
+    fn on(target: &str, body: Vec<Statement>) -> Statement {
+        Statement::On {
+            target: target.to_string(),
+            body,
+        }
+    }
+
+    #[test]
+    fn on_block() {
+        assert_eq!(
+            parse_body("fn main() { on sim { print(1); } }"),
+            Ok(vec![on("sim", vec![Statement::Print(1)])])
+        );
+    }
+
+    #[test]
+    fn empty_on_block() {
+        assert_eq!(
+            parse_body("fn main() { on sim {} }"),
+            Ok(vec![on("sim", vec![])])
+        );
+    }
+
+    #[test]
+    fn on_block_between_statements() {
+        assert_eq!(
+            parse_body("fn main() { print(1); on sim { print(2); } print(3); }"),
+            Ok(vec![
+                Statement::Print(1),
+                on("sim", vec![Statement::Print(2)]),
+                Statement::Print(3),
+            ])
+        );
+    }
+
+    #[test]
+    fn nested_on_blocks() {
+        assert_eq!(
+            parse_body("fn main() { on a { on b { print(1); } } }"),
+            Ok(vec![on("a", vec![on("b", vec![Statement::Print(1)])])])
+        );
+    }
+
+    #[test]
+    fn on_without_target() {
+        assert_eq!(
+            parse_source("fn main() { on { print(1); } }"),
+            Err(ParseError::UnexpectedToken {
+                expected: "identifier".to_string(),
+                found: Token::OpenBrace,
+            })
+        );
+    }
+
+    #[test]
+    fn unclosed_on_block() {
+        assert_eq!(
+            parse_source("fn main() { on sim { print(1); }"),
+            Err(ParseError::UnexpectedEndOfInput {
+                expected: "`}`".to_string(),
             })
         );
     }
