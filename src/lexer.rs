@@ -1,16 +1,21 @@
 //! The lexer is the first stage. It turns source text into a list of tokens.
 
 use std::fmt;
+use std::num::IntErrorKind;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
     /// The `fn` keyword.
     Fn,
     Identifier(String),
+    /// A non-negative integer literal, such as `42`.
+    /// Negative numbers will be written with a unary minus, which is not supported yet.
+    Integer(i64),
     OpenParen,
     CloseParen,
     OpenBrace,
     CloseBrace,
+    Semicolon,
 }
 
 impl fmt::Display for Token {
@@ -18,10 +23,12 @@ impl fmt::Display for Token {
         match self {
             Token::Fn => write!(f, "`fn`"),
             Token::Identifier(name) => write!(f, "identifier `{name}`"),
+            Token::Integer(value) => write!(f, "integer `{value}`"),
             Token::OpenParen => write!(f, "`(`"),
             Token::CloseParen => write!(f, "`)`"),
             Token::OpenBrace => write!(f, "`{{`"),
             Token::CloseBrace => write!(f, "`}}`"),
+            Token::Semicolon => write!(f, "`;`"),
         }
     }
 }
@@ -29,12 +36,17 @@ impl fmt::Display for Token {
 #[derive(Debug, PartialEq, Eq)]
 pub enum LexError {
     UnexpectedCharacter(char),
+    /// The integer literal does not fit in an `i64`. It contains the digits as written.
+    IntegerTooLarge(String),
 }
 
 impl fmt::Display for LexError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             LexError::UnexpectedCharacter(c) => write!(f, "unexpected character `{c}`"),
+            LexError::IntegerTooLarge(digits) => {
+                write!(f, "integer `{digits}` is too large")
+            }
         }
     }
 }
@@ -56,12 +68,23 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, LexError> {
                 chars.next();
             }
             tokens.push(keyword_or_identifier(word));
+        } else if c.is_ascii_digit() {
+            let mut digits = String::new();
+            while let Some(&c) = chars.peek() {
+                if !c.is_ascii_digit() {
+                    break;
+                }
+                digits.push(c);
+                chars.next();
+            }
+            tokens.push(integer_token(digits)?);
         } else {
             let token = match c {
                 '(' => Token::OpenParen,
                 ')' => Token::CloseParen,
                 '{' => Token::OpenBrace,
                 '}' => Token::CloseBrace,
+                ';' => Token::Semicolon,
                 _ => return Err(LexError::UnexpectedCharacter(c)),
             };
             tokens.push(token);
@@ -84,6 +107,21 @@ fn keyword_or_identifier(word: String) -> Token {
     match word.as_str() {
         "fn" => Token::Fn,
         _ => Token::Identifier(word),
+    }
+}
+
+/// Converts the digits of an integer literal to a token.
+///
+/// `digits` must be a non-empty string of ASCII digits.
+fn integer_token(digits: String) -> Result<Token, LexError> {
+    match digits.parse() {
+        Ok(value) => Ok(Token::Integer(value)),
+        Err(error) if *error.kind() == IntErrorKind::PosOverflow => {
+            Err(LexError::IntegerTooLarge(digits))
+        }
+        Err(error) => {
+            panic!("integer literal `{digits}` should contain only ASCII digits: {error}")
+        }
     }
 }
 
@@ -128,6 +166,58 @@ mod tests {
     #[test]
     fn identifier_with_underscore_and_digits() {
         assert_eq!(tokenize("_foo_1"), Ok(vec![identifier("_foo_1")]));
+    }
+
+    #[test]
+    fn integer() {
+        assert_eq!(tokenize("42"), Ok(vec![Token::Integer(42)]));
+    }
+
+    #[test]
+    fn integer_with_leading_zeros() {
+        assert_eq!(tokenize("007"), Ok(vec![Token::Integer(7)]));
+    }
+
+    #[test]
+    fn largest_integer() {
+        assert_eq!(
+            tokenize("9223372036854775807"),
+            Ok(vec![Token::Integer(i64::MAX)])
+        );
+    }
+
+    #[test]
+    fn integer_too_large_is_an_error() {
+        assert_eq!(
+            tokenize("9223372036854775808"),
+            Err(LexError::IntegerTooLarge("9223372036854775808".to_string()))
+        );
+    }
+
+    #[test]
+    fn digits_followed_by_letters_are_two_tokens() {
+        // The parser rejects this, because an integer is never directly followed by an identifier.
+        assert_eq!(
+            tokenize("12ab"),
+            Ok(vec![Token::Integer(12), identifier("ab")])
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "should contain only ASCII digits")]
+    fn integer_token_panics_on_non_digit() {
+        let _ = integer_token("1a".to_string());
+    }
+
+    #[test]
+    #[should_panic(expected = "should contain only ASCII digits")]
+    fn integer_token_panics_on_empty_digits() {
+        let _ = integer_token(String::new());
+    }
+
+    #[test]
+    fn semicolon() {
+        assert_eq!(tokenize("x;"), Ok(vec![identifier("x"), Token::Semicolon]));
     }
 
     #[test]
