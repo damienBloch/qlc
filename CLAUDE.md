@@ -14,5 +14,10 @@ This let us start with simple passes and then improve them later.
 interface of the compiler and not the internal implementation.
 - It is important that tests are as readable and reviewable as the rest of the code. Don't hesitate to write utility 
 functions to make tests more readable and avoid repeating boilerplate code.
+
+
+# Code guidelines
+
 - In the code, use "expect" with a reason for behavior that should not occur. Use "todo" for what is not decided yet.  
-It is crucial to panic rather than to silently ignore an unexpected situation.
+  It is crucial to panic rather than to silently ignore an unexpected situation, even if someone latter uses the function in a way that is not expected.
+- Documentation should describe what the code does, not how.
