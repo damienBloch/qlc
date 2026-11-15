@@ -24,6 +24,10 @@ flowchart LR
 | Parser      | `src/parser.rs`      | `&[Token]`   | `Program`    |
 | Interpreter | `src/interpreter.rs` | `&Program`   | `()`         |
 
+The interpreter also takes an output writer (`&mut impl Write`).
+`print` writes to it.
+The command line passes stdout, and the unit tests pass a `Vec<u8>` to check the output.
+
 The AST types are in `src/ast.rs`.
 They are shared by the parser and the interpreter.
 
@@ -69,7 +73,7 @@ statement = "print" "(" integer ")" ";"
 ```
 
 An integer is a sequence of ASCII digits whose value fits in an `i64`.
-The parser accepts `print`, but the interpreter does not execute it yet.
+`print` writes the integer on its own line on stdout.
 
 A program must contain exactly one function named `main`.
 Function names must be unique.

@@ -10,6 +10,7 @@ pub mod lexer;
 pub mod parser;
 
 use std::fmt;
+use std::io::Write;
 
 /// An error found in the user's program, by any stage.
 #[derive(Debug, PartialEq, Eq)]
@@ -29,9 +30,9 @@ impl fmt::Display for Error {
     }
 }
 
-/// Runs all stages on `source`.
-pub fn run_source(source: &str) -> Result<(), Error> {
+/// Runs all stages on `source`. What the program prints is written to `output`.
+pub fn run_source(source: &str, output: &mut impl Write) -> Result<(), Error> {
     let tokens = lexer::tokenize(source).map_err(Error::Lex)?;
     let program = parser::parse(&tokens).map_err(Error::Parse)?;
-    interpreter::run(&program).map_err(Error::Run)
+    interpreter::run(&program, output).map_err(Error::Run)
 }

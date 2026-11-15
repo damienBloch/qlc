@@ -20,10 +20,10 @@ fn stderr(output: &Output) -> String {
     String::from_utf8(output.stderr.clone()).expect("stderr should be UTF-8")
 }
 
-/// Checks that the program ran successfully and printed nothing.
-fn assert_success(output: &Output) {
+/// Checks that the program ran successfully and printed `expected_stdout`.
+fn assert_success(output: &Output, expected_stdout: &str) {
     assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(output));
-    assert_eq!(stdout(output), "");
+    assert_eq!(stdout(output), expected_stdout);
     assert_eq!(stderr(output), "");
 }
 
@@ -37,7 +37,30 @@ fn assert_error(output: &Output, message: &str) {
 
 #[test]
 fn empty_main() {
-    assert_success(&run_program("empty_main.ql"));
+    assert_success(&run_program("empty_main.ql"), "");
+}
+
+#[test]
+fn print_integer() {
+    assert_success(&run_program("print_integer.ql"), "42\n");
+}
+
+#[test]
+fn print_several_integers() {
+    assert_success(&run_program("print_several_integers.ql"), "1\n2\n3\n");
+}
+
+#[test]
+fn only_main_runs() {
+    assert_success(&run_program("only_main_runs.ql"), "1\n");
+}
+
+#[test]
+fn integer_too_large() {
+    assert_error(
+        &run_program("integer_too_large.ql"),
+        "integer `9223372036854775808` is too large",
+    );
 }
 
 #[test]

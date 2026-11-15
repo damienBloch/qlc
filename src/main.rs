@@ -21,7 +21,7 @@ fn main() -> ExitCode {
         }
     };
 
-    match qlc::run_source(&source) {
+    match qlc::run_source(&source, &mut std::io::stdout().lock()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("error: {error}");
