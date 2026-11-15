@@ -2,6 +2,7 @@
 //!
 //! The work is split in stages. Each stage consumes the output of the previous one:
 //! source text -> [`lexer`] -> tokens -> [`parser`] -> AST -> [`interpreter`].
+//! The interpreter sends the body of `on` blocks to the [`targets`].
 //! See `docs/architecture.md` for details.
 
 pub mod ast;
@@ -35,5 +36,5 @@ impl fmt::Display for Error {
 pub fn run_source(source: &str, output: &mut impl Write) -> Result<(), Error> {
     let tokens = lexer::tokenize(source).map_err(Error::Lex)?;
     let program = parser::parse(&tokens).map_err(Error::Parse)?;
-    interpreter::run(&program, output).map_err(Error::Run)
+    interpreter::run(&program, &targets::Registry::builtin(), output).map_err(Error::Run)
 }
