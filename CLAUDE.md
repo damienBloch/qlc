@@ -24,4 +24,6 @@ functions to make tests more readable and avoid repeating boilerplate code.
 
 # Compiler guidelines
 
-- As much check as possible should be done at compile time rather than at runtime. 
+- As much check as possible should be done at compile time rather than at runtime.
+- Functions should be checked individually. A function body that typechecks should not raise any error when called in  
+a way that satisfies its signature.
