@@ -59,12 +59,17 @@ All the language logic is in the library (`src/lib.rs` and the stage modules).
 
 ## Language
 
-The language currently supports only empty functions without parameters:
+The language currently supports functions without parameters.
+A function body is a list of `print` statements:
 
 ```text
-program  = function*
-function = "fn" identifier "(" ")" "{" "}"
+program   = function*
+function  = "fn" identifier "(" ")" "{" statement* "}"
+statement = "print" "(" integer ")" ";"
 ```
+
+An integer is a sequence of ASCII digits whose value fits in an `i64`.
+The parser accepts `print`, but the interpreter does not execute it yet.
 
 A program must contain exactly one function named `main`.
 Function names must be unique.

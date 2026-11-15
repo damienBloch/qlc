@@ -3,13 +3,14 @@
 //! Grammar:
 //!
 //! ```text
-//! program  = function*
-//! function = "fn" identifier "(" ")" "{" "}"
+//! program   = function*
+//! function  = "fn" identifier "(" ")" "{" statement* "}"
+//! statement = "print" "(" integer ")" ";"
 //! ```
 
 use std::fmt;
 
-use crate::ast::{Function, Program};
+use crate::ast::{Function, Program, Statement};
 use crate::lexer::Token;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -59,8 +60,21 @@ impl Parser<'_> {
         self.expect(&Token::OpenParen)?;
         self.expect(&Token::CloseParen)?;
         self.expect(&Token::OpenBrace)?;
+        let mut body = Vec::new();
+        while self.peek().is_some_and(|token| *token != Token::CloseBrace) {
+            body.push(self.parse_statement()?);
+        }
         self.expect(&Token::CloseBrace)?;
-        Ok(Function { name })
+        Ok(Function { name, body })
+    }
+
+    fn parse_statement(&mut self) -> Result<Statement, ParseError> {
+        self.expect(&Token::Print)?;
+        self.expect(&Token::OpenParen)?;
+        let value = self.expect_integer()?;
+        self.expect(&Token::CloseParen)?;
+        self.expect(&Token::Semicolon)?;
+        Ok(Statement::Print(value))
     }
 
     /// Consumes the next token if it is equal to `expected`. Returns an error otherwise.
@@ -88,6 +102,23 @@ impl Parser<'_> {
         }
     }
 
+    /// Consumes the next token if it is an integer and returns its value.
+    fn expect_integer(&mut self) -> Result<i64, ParseError> {
+        let expected = "integer";
+        match self.next_token(expected)? {
+            Token::Integer(value) => Ok(*value),
+            found => Err(ParseError::UnexpectedToken {
+                expected: expected.to_string(),
+                found: found.clone(),
+            }),
+        }
+    }
+
+    /// Returns the next token without consuming it, or `None` at the end of the input.
+    fn peek(&self) -> Option<&Token> {
+        self.tokens.get(self.position)
+    }
+
     /// Consumes and returns the next token. `expected` is only used for the error message.
     fn next_token(&mut self, expected: &str) -> Result<&Token, ParseError> {
         let token =
@@ -112,10 +143,22 @@ mod tests {
         parse(&tokens)
     }
 
-    fn function(name: &str) -> Function {
+    fn function(name: &str, body: Vec<Statement>) -> Function {
         Function {
             name: name.to_string(),
+            body,
         }
+    }
+
+    /// Parses `source` and returns the body of its only function.
+    fn parse_body(source: &str) -> Result<Vec<Statement>, ParseError> {
+        let mut program = parse_source(source)?;
+        assert_eq!(
+            program.functions.len(),
+            1,
+            "test source should have one function"
+        );
+        Ok(program.functions.remove(0).body)
     }
 
     #[test]
@@ -128,7 +171,7 @@ mod tests {
         assert_eq!(
             parse_source("fn main() {}"),
             Ok(Program {
-                functions: vec![function("main")]
+                functions: vec![function("main", vec![])]
             })
         );
     }
@@ -138,7 +181,7 @@ mod tests {
         assert_eq!(
             parse_source("fn a() {} fn b() {}"),
             Ok(Program {
-                functions: vec![function("a"), function("b")]
+                functions: vec![function("a", vec![]), function("b", vec![])]
             })
         );
     }
@@ -176,12 +219,71 @@ mod tests {
     }
 
     #[test]
-    fn statements_are_not_supported() {
+    fn print_statement() {
+        assert_eq!(
+            parse_body("fn main() { print(42); }"),
+            Ok(vec![Statement::Print(42)])
+        );
+    }
+
+    #[test]
+    fn several_statements() {
+        assert_eq!(
+            parse_body("fn main() { print(1); print(2); }"),
+            Ok(vec![Statement::Print(1), Statement::Print(2)])
+        );
+    }
+
+    #[test]
+    fn missing_closing_brace_after_statement() {
+        assert_eq!(
+            parse_source("fn main() { print(1);"),
+            Err(ParseError::UnexpectedEndOfInput {
+                expected: "`}`".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn unknown_statement() {
         assert_eq!(
             parse_source("fn main() { x }"),
             Err(ParseError::UnexpectedToken {
-                expected: "`}`".to_string(),
+                expected: "`print`".to_string(),
                 found: Token::Identifier("x".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn print_without_integer() {
+        assert_eq!(
+            parse_source("fn main() { print(); }"),
+            Err(ParseError::UnexpectedToken {
+                expected: "integer".to_string(),
+                found: Token::CloseParen,
+            })
+        );
+    }
+
+    #[test]
+    fn print_without_semicolon() {
+        assert_eq!(
+            parse_source("fn main() { print(1) }"),
+            Err(ParseError::UnexpectedToken {
+                expected: "`;`".to_string(),
+                found: Token::CloseBrace,
+            })
+        );
+    }
+
+    #[test]
+    fn integer_followed_by_identifier() {
+        assert_eq!(
+            parse_source("fn main() { print(12ab); }"),
+            Err(ParseError::UnexpectedToken {
+                expected: "`)`".to_string(),
+                found: Token::Identifier("ab".to_string()),
             })
         );
     }

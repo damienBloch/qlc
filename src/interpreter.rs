@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 use std::fmt;
 
-use crate::ast::{Function, Program};
+use crate::ast::{Function, Program, Statement};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum RunError {
@@ -44,8 +44,14 @@ fn check_no_duplicate_functions(program: &Program) -> Result<(), RunError> {
     Ok(())
 }
 
-/// Calls `function`. Function bodies are always empty for now, so there is nothing to execute.
-fn call(_function: &Function) {}
+/// Calls `function`.
+fn call(function: &Function) {
+    for statement in &function.body {
+        match statement {
+            Statement::Print(_) => todo!("the interpreter does not support `print` yet"),
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -57,6 +63,7 @@ mod tests {
                 .iter()
                 .map(|name| Function {
                     name: name.to_string(),
+                    body: vec![],
                 })
                 .collect(),
         }

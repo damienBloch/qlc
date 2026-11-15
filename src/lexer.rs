@@ -7,6 +7,8 @@ use std::num::IntErrorKind;
 pub enum Token {
     /// The `fn` keyword.
     Fn,
+    /// The `print` keyword.
+    Print,
     Identifier(String),
     /// A non-negative integer literal, such as `42`.
     /// Negative numbers will be written with a unary minus, which is not supported yet.
@@ -22,6 +24,7 @@ impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Token::Fn => write!(f, "`fn`"),
+            Token::Print => write!(f, "`print`"),
             Token::Identifier(name) => write!(f, "identifier `{name}`"),
             Token::Integer(value) => write!(f, "integer `{value}`"),
             Token::OpenParen => write!(f, "`(`"),
@@ -106,6 +109,7 @@ fn is_identifier_continue(c: char) -> bool {
 fn keyword_or_identifier(word: String) -> Token {
     match word.as_str() {
         "fn" => Token::Fn,
+        "print" => Token::Print,
         _ => Token::Identifier(word),
     }
 }
@@ -156,6 +160,11 @@ mod tests {
     #[test]
     fn whitespace_is_skipped_including_windows_line_endings() {
         assert_eq!(tokenize(" \t\r\n fn \r\n"), Ok(vec![Token::Fn]));
+    }
+
+    #[test]
+    fn print_keyword() {
+        assert_eq!(tokenize("print"), Ok(vec![Token::Print]));
     }
 
     #[test]
