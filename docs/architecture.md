@@ -5,6 +5,8 @@ Parts of the program, the `on` blocks, run on other devices, called targets.
 The work is split in stages.
 Each stage takes the output of the previous stage as input and produces a new representation.
 
+This document describes what exists today. `design.md` describes the language and compiler that qlc aims for.
+
 ## Stages
 
 ```mermaid
