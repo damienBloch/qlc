@@ -1,10 +1,10 @@
-//! The interpreter is the last stage. It executes a program from its resolved AST.
+//! The interpreter is the last stage. It executes a program from its typed AST.
 //!
 //! The previous stages check the program, so running it cannot fail.
 
 use std::io::Write;
 
-use crate::resolved_ast::{Expression, Function, Program, Statement, VariableId};
+use crate::typed_ast::{Expression, Function, Program, Statement, VariableId};
 
 /// Runs the `main` function of `program`. What the program prints is written to `output`.
 pub fn run(program: &Program, output: &mut impl Write) {
@@ -13,7 +13,7 @@ pub fn run(program: &Program, output: &mut impl Write) {
 
 /// Calls `function`.
 fn call(function: &Function, output: &mut impl Write) {
-    let mut variables = Variables::new(function.variable_count);
+    let mut variables = Variables::new(function.variable_types.len());
     for statement in &function.body {
         match statement {
             Statement::Print(expression) => {
@@ -69,7 +69,8 @@ impl Variables {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::resolved_ast::FunctionId;
+    use crate::typed_ast::FunctionId;
+    use crate::types::Type;
 
     /// Runs `program` and returns what it printed.
     fn run_to_string(program: &Program) -> String {
@@ -83,6 +84,7 @@ mod tests {
         function_with_variables(name, body, 0)
     }
 
+    /// A function with `variable_count` variables of type `Int`.
     fn function_with_variables(
         name: &str,
         body: Vec<Statement>,
@@ -91,7 +93,7 @@ mod tests {
         Function {
             name: name.to_string(),
             body,
-            variable_count,
+            variable_types: vec![Type::Int; variable_count],
         }
     }
 

@@ -1,4 +1,4 @@
-//! The resolved AST. The resolver produces it and the interpreter runs it.
+//! The resolved AST. The resolver produces it and the type checker consumes it.
 //!
 //! It is the AST of a program whose names have been checked:
 //! function names are unique, the `main` function exists,
@@ -27,6 +27,11 @@ impl Program {
     /// The id of the `main` function.
     pub fn main(&self) -> FunctionId {
         self.main
+    }
+
+    /// Returns the functions and the id of the `main` function.
+    pub fn into_parts(self) -> (Vec<Function>, FunctionId) {
+        (self.functions, self.main)
     }
 
     /// The function `id`. Panics if the program has no such function.

@@ -2,7 +2,7 @@
 //!
 //! The work is split in stages. Each stage consumes the output of the previous one:
 //! source text -> [`lexer`] -> tokens -> [`parser`] -> AST -> [`resolver`] -> resolved AST
-//! -> [`interpreter`].
+//! -> [`typechecker`] -> typed AST -> [`interpreter`].
 //! See `docs/architecture.md` for details.
 
 pub mod ast;
@@ -11,6 +11,9 @@ pub mod lexer;
 pub mod parser;
 pub mod resolved_ast;
 pub mod resolver;
+pub mod typechecker;
+pub mod typed_ast;
+pub mod types;
 
 use std::fmt;
 use std::io::Write;
@@ -38,6 +41,7 @@ pub fn run_source(source: &str, output: &mut impl Write) -> Result<(), Error> {
     let tokens = lexer::tokenize(source).map_err(Error::Lex)?;
     let program = parser::parse(&tokens).map_err(Error::Parse)?;
     let program = resolver::resolve(program).map_err(Error::Resolve)?;
+    let program = typechecker::check(program);
     interpreter::run(&program, output);
     Ok(())
 }

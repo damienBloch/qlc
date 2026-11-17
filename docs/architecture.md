@@ -14,35 +14,51 @@ flowchart LR
     tokens["Tokens<br/>(Vec&lt;Token&gt;)"]
     ast["AST<br/>(ast::Program)"]
     rast["Resolved AST<br/>(resolved_ast::Program)"]
+    tast["Typed AST<br/>(typed_ast::Program)"]
     result["Result<br/>(exit code)"]
 
     source -- "lexer::tokenize" --> tokens
     tokens -- "parser::parse" --> ast
     ast -- "resolver::resolve" --> rast
-    rast -- "interpreter::run" --> result
+    rast -- "typechecker::check" --> tast
+    tast -- "interpreter::run" --> result
 ```
 
-| Stage       | File                 | Input                    | Output                  |
-|-------------|----------------------|--------------------------|-------------------------|
-| Lexer       | `src/lexer.rs`       | source text              | `Vec<Token>`            |
-| Parser      | `src/parser.rs`      | `&[Token]`               | `ast::Program`          |
-| Resolver    | `src/resolver.rs`    | `ast::Program`           | `resolved_ast::Program` |
-| Interpreter | `src/interpreter.rs` | `&resolved_ast::Program` | `()`                    |
+| Stage        | File                 | Input                   | Output                  |
+|--------------|----------------------|-------------------------|-------------------------|
+| Lexer        | `src/lexer.rs`       | source text             | `Vec<Token>`            |
+| Parser       | `src/parser.rs`      | `&[Token]`              | `ast::Program`          |
+| Resolver     | `src/resolver.rs`    | `ast::Program`          | `resolved_ast::Program` |
+| Type checker | `src/typechecker.rs` | `resolved_ast::Program` | `typed_ast::Program`    |
+| Interpreter  | `src/interpreter.rs` | `&typed_ast::Program`   | `()`                    |
 
 The resolver checks the names of the program: function names must be unique,
 there must be a `main` function, and each variable must be defined before it is used.
 The resolved AST stores which function is `main`.
 It refers to each variable by a `VariableId`, its index in its function, instead of its name.
-Each function stores its number of variables, so the interpreter can store their values in a `Vec`.
+Each function stores its number of variables.
+
+The type checker gives a type to each variable: the type of the value of its `let`.
+The typed AST stores the type of each variable of each function, indexed by its `VariableId`.
+The interpreter uses the number of variables to store their values in a `Vec`.
+The types are in `src/types.rs`. Each type has a kind:
+
+- `Data`: a value that can be copied and dropped.
+- `Resource`: a value that must be used exactly once. It cannot be copied or dropped.
+
+Today `Int` is the only type, and its kind is `Data`. So no type error can occur yet.
 
 The interpreter also takes an output writer (`&mut impl Write`).
 `print` writes to it.
 The command line passes stdout, and the unit tests pass a `Vec<u8>` to check the output.
 
 The AST types are in `src/ast.rs`. They are shared by the parser and the resolver.
-The resolved AST types are in `src/resolved_ast.rs`. They are shared by the resolver and the interpreter.
-The resolved AST has its own types for functions, statements and expressions, separate from the AST.
-So the resolver can store what it finds about names, and the interpreter does not depend on the AST.
+The resolved AST types are in `src/resolved_ast.rs`. They are shared by the resolver and the type checker.
+The typed AST types are in `src/typed_ast.rs`. They are shared by the type checker and the interpreter.
+Each of these representations has its own types for functions, statements and expressions.
+So each stage can store what it finds, and a stage does not depend on the representations of earlier stages.
+The only exception is the ids `FunctionId` and `VariableId`: they are defined in `src/resolved_ast.rs`
+and the typed AST uses them too.
 
 Each stage is one public function.
 A stage only depends on the types of its input and output.
