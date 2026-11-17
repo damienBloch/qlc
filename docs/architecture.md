@@ -21,6 +21,7 @@ flowchart LR
     tokens -- "parser::parse" --> ast
     ast -- "resolver::resolve" --> rast
     rast -- "typechecker::check" --> tast
+    tast -- "linearity::check" --> tast
     tast -- "interpreter::run" --> result
 ```
 
@@ -30,6 +31,7 @@ flowchart LR
 | Parser       | `src/parser.rs`      | `&[Token]`              | `ast::Program`          |
 | Resolver     | `src/resolver.rs`    | `ast::Program`          | `resolved_ast::Program` |
 | Type checker | `src/typechecker.rs` | `resolved_ast::Program` | `typed_ast::Program`    |
+| Linearity    | `src/linearity.rs`   | `&typed_ast::Program`   | `()`                    |
 | Interpreter  | `src/interpreter.rs` | `&typed_ast::Program`   | `()`                    |
 
 The resolver checks the names of the program: function names must be unique,
@@ -54,7 +56,15 @@ There are two types:
 
 The type checker checks that `print` gets an `Int` and `delete` gets a `SimDevice`.
 Otherwise it reports a `TypeError::Mismatch`.
-The rules of the `Resource` kind are not checked yet.
+
+The linearity checker checks how resources are used. It only reads the typed AST.
+Reading a variable whose type is of kind `Resource` moves its value,
+for example in `delete(d)` or `let e = d;`.
+A variable cannot be read after its value is moved.
+Otherwise the linearity checker reports a `LinearityError::UseAfterMove`.
+That each resource is used at least once is not checked yet.
+It is a separate stage from the type checker, so that its algorithm can change
+without changing the type checker. For example, branches will need a flow analysis.
 
 The interpreter also takes an output writer (`&mut impl Write`).
 `print` writes to it.
@@ -74,7 +84,7 @@ So the algorithm of a stage can be changed without changing the other stages.
 
 ## Errors
 
-Each stage that can fail has its own error type: `LexError`, `ParseError`, `ResolveError` and `TypeError`.
+Each stage that can fail has its own error type: `LexError`, `ParseError`, `ResolveError`, `TypeError` and `LinearityError`.
 `src/lib.rs` wraps them in one `Error` type.
 
 There are two kinds of problems:

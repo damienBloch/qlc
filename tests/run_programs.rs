@@ -94,6 +94,14 @@ fn delete_of_an_integer() {
 }
 
 #[test]
+fn use_of_a_deleted_sim_device() {
+    assert_error(
+        &run_program("delete_twice.ql"),
+        "variable `d` is used after its value is moved",
+    );
+}
+
+#[test]
 fn integer_too_large() {
     assert_error(
         &run_program("integer_too_large.ql"),
