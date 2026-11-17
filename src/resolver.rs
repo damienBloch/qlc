@@ -63,11 +63,11 @@ fn resolve_function(function: ast::Function) -> Result<resolved_ast::Function, R
         .into_iter()
         .map(|statement| resolve_statement(statement, &mut variables))
         .collect::<Result<_, _>>()?;
-    Ok(resolved_ast::Function {
-        name: function.name,
+    Ok(resolved_ast::Function::new(
+        function.name,
         body,
-        variable_count: variables.count,
-    })
+        variables.count,
+    ))
 }
 
 /// Resolves `statement`. `variables` contains the variables defined before it in its function.
@@ -166,7 +166,7 @@ mod tests {
         expected: Vec<resolved_ast::Statement>,
     ) {
         let program = resolve(main_with_body(body)).expect("the program should be valid");
-        assert_eq!(program.function(program.main()).body, expected);
+        assert_eq!(program.function(program.main()).body(), expected);
     }
 
     /// Returns the error found when resolving a `main` function with the body `body`.
@@ -234,13 +234,13 @@ mod tests {
         let program = resolve(program).expect("the program should be valid");
         assert_eq!(
             program.function(program.main()),
-            &resolved_ast::Function {
-                name: "main".to_string(),
-                body: vec![resolved_ast::Statement::Print(
+            &resolved_ast::Function::new(
+                "main".to_string(),
+                vec![resolved_ast::Statement::Print(
                     resolved_ast::Expression::Integer(42)
                 )],
-                variable_count: 0,
-            }
+                0,
+            )
         );
     }
 
@@ -331,7 +331,7 @@ mod tests {
             ast_let("x", ast::Expression::Integer(2)),
         ]))
         .expect("the program should be valid");
-        assert_eq!(program.function(program.main()).variable_count, 2);
+        assert_eq!(program.function(program.main()).variable_count(), 2);
     }
 
     #[test]

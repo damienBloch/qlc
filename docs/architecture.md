@@ -77,6 +77,10 @@ There are two kinds of problems:
   The command line prints `error: <message>` on stderr and exits with code 1.
 - **Bugs in qlc.** The code panics, with `expect` and a reason.
   Features that are not decided yet use `todo!`.
+  Each representation checks its rules when it is built, in the constructors of its types.
+  For example, `resolved_ast::Function::new` panics if a variable is read before it is set.
+  So a bug is found in the stage that builds a wrong representation, not in a later stage.
+  The rules of each representation are listed in the documentation of its module.
 
 ## Command line
 

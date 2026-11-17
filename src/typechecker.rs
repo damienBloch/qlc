@@ -16,23 +16,29 @@ pub fn check(program: resolved_ast::Program) -> typed_ast::Program {
 }
 
 fn check_function(function: resolved_ast::Function) -> typed_ast::Function {
-    let mut variable_types = VariableTypes::new(function.variable_count);
-    let body = function
-        .body
+    let (name, body, variable_count) = function.into_parts();
+    // The type of each variable, indexed by its id. `None` until its `let` is checked.
+    let mut variable_types = vec![None; variable_count];
+    let body = body
         .into_iter()
         .map(|statement| check_statement(statement, &mut variable_types))
         .collect();
-    typed_ast::Function {
-        name: function.name,
-        body,
-        variable_types: variable_types.into_types(),
-    }
+    let variable_types = variable_types
+        .into_iter()
+        .map(|variable_type| {
+            variable_type.expect(
+                "`resolved_ast::Function` should ensure that each variable is set by a `let`",
+            )
+        })
+        .collect();
+    typed_ast::Function::new(name, body, variable_types)
 }
 
-/// Checks `statement`. `variable_types` contains the types of the variables set before it.
+/// Checks `statement`. `variable_types` contains the type of each variable of its function,
+/// or `None` if the variable is not set before `statement`.
 fn check_statement(
     statement: resolved_ast::Statement,
-    variable_types: &mut VariableTypes,
+    variable_types: &mut [Option<Type>],
 ) -> typed_ast::Statement {
     match statement {
         resolved_ast::Statement::Print(value) => {
@@ -43,17 +49,20 @@ fn check_statement(
         }
         resolved_ast::Statement::Let { variable, value } => {
             let (value, value_type) = check_expression(value, variable_types);
-            variable_types.set(variable, value_type);
+            *variable_types
+                .get_mut(variable.0)
+                .expect(VARIABLE_ID_IN_RANGE) = Some(value_type);
             typed_ast::Statement::Let { variable, value }
         }
     }
 }
 
 /// Checks `expression` and returns it with its type.
-/// `variable_types` contains the types of the variables set before it.
+/// `variable_types` contains the type of each variable of its function,
+/// or `None` if the variable is not set before `expression`.
 fn check_expression(
     expression: resolved_ast::Expression,
-    variable_types: &VariableTypes,
+    variable_types: &[Option<Type>],
 ) -> (typed_ast::Expression, Type) {
     match expression {
         resolved_ast::Expression::Integer(value) => {
@@ -61,54 +70,15 @@ fn check_expression(
         }
         resolved_ast::Expression::Variable(variable) => (
             typed_ast::Expression::Variable(variable),
-            variable_types.get(variable),
+            variable_types
+                .get(variable.0)
+                .expect(VARIABLE_ID_IN_RANGE)
+                .expect("`resolved_ast::Function` should ensure that a variable is set before it is read"),
         ),
     }
 }
 
-/// The types of the variables of a function, found so far.
-struct VariableTypes {
-    /// The type of each variable, indexed by its id. `None` if its `let` is not checked yet.
-    types: Vec<Option<Type>>,
-}
-
-impl VariableTypes {
-    /// Creates `count` variables whose types are not known yet.
-    fn new(count: usize) -> Self {
-        VariableTypes {
-            types: vec![None; count],
-        }
-    }
-
-    fn set(&mut self, variable: resolved_ast::VariableId, variable_type: Type) {
-        let slot = self
-            .types
-            .get_mut(variable.0)
-            .expect("a variable id should be smaller than the variable count of its function");
-        assert!(
-            slot.is_none(),
-            "each variable should be set by only one `let`"
-        );
-        *slot = Some(variable_type);
-    }
-
-    fn get(&self, variable: resolved_ast::VariableId) -> Type {
-        self.types
-            .get(variable.0)
-            .expect("a variable id should be smaller than the variable count of its function")
-            .expect("the resolver should ensure that a variable is set before it is read")
-    }
-
-    /// Returns the type of each variable. Panics if a variable has no type.
-    fn into_types(self) -> Vec<Type> {
-        self.types
-            .into_iter()
-            .map(|variable_type| {
-                variable_type.expect("the resolver should define each variable with a `let`")
-            })
-            .collect()
-    }
-}
+const VARIABLE_ID_IN_RANGE: &str = "`resolved_ast::Function::new` checks variable ids";
 
 #[cfg(test)]
 mod tests {
@@ -118,17 +88,13 @@ mod tests {
     /// Checks a program whose only function is `main`, with the body `body`
     /// and `variable_count` variables.
     fn check_main(body: Vec<resolved_ast::Statement>, variable_count: usize) -> typed_ast::Program {
-        let main = resolved_ast::Function {
-            name: "main".to_string(),
-            body,
-            variable_count,
-        };
+        let main = resolved_ast::Function::new("main".to_string(), body, variable_count);
         check(resolved_ast::Program::new(vec![main], FunctionId(0)))
     }
 
     /// The types of the variables of the `main` function of `program`.
     fn main_variable_types(program: &typed_ast::Program) -> &[Type] {
-        &program.function(program.main()).variable_types
+        program.function(program.main()).variable_types()
     }
 
     /// A resolved statement that sets `variable` to the integer `value`.
@@ -157,27 +123,24 @@ mod tests {
         let program = check_main(vec![let_integer(0, 42), print_variable(0)], 1);
         assert_eq!(
             program.function(program.main()),
-            &typed_ast::Function {
-                name: "main".to_string(),
-                body: vec![
+            &typed_ast::Function::new(
+                "main".to_string(),
+                vec![
                     typed_ast::Statement::Let {
                         variable: VariableId(0),
                         value: typed_ast::Expression::Integer(42),
                     },
                     typed_ast::Statement::Print(typed_ast::Expression::Variable(VariableId(0))),
                 ],
-                variable_types: vec![Type::Int],
-            }
+                vec![Type::Int],
+            )
         );
     }
 
     #[test]
     fn main_stays_the_same() {
-        let functions = ["helper", "main"].map(|name| resolved_ast::Function {
-            name: name.to_string(),
-            body: vec![],
-            variable_count: 0,
-        });
+        let functions =
+            ["helper", "main"].map(|name| resolved_ast::Function::new(name.to_string(), vec![], 0));
         let program = check(resolved_ast::Program::new(functions.into(), FunctionId(1)));
         assert_eq!(program.main(), FunctionId(1));
     }
@@ -192,25 +155,5 @@ mod tests {
     fn variable_set_to_a_variable_has_its_type() {
         let program = check_main(vec![let_integer(0, 1), let_variable(1, 0)], 2);
         assert_eq!(main_variable_types(&program), [Type::Int, Type::Int]);
-    }
-
-    #[test]
-    #[should_panic(
-        expected = "the resolver should ensure that a variable is set before it is read"
-    )]
-    fn variable_read_before_its_let_panics() {
-        check_main(vec![print_variable(0), let_integer(0, 1)], 1);
-    }
-
-    #[test]
-    #[should_panic(expected = "the resolver should define each variable with a `let`")]
-    fn variable_without_let_panics() {
-        check_main(vec![], 1);
-    }
-
-    #[test]
-    #[should_panic(expected = "each variable should be set by only one `let`")]
-    fn variable_set_twice_panics() {
-        check_main(vec![let_integer(0, 1), let_integer(0, 2)], 1);
     }
 }

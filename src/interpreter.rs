@@ -4,7 +4,7 @@
 
 use std::io::Write;
 
-use crate::typed_ast::{Expression, Function, Program, Statement, VariableId};
+use crate::typed_ast::{Expression, Function, Program, Statement};
 
 /// Runs the `main` function of `program`. What the program prints is written to `output`.
 pub fn run(program: &Program, output: &mut impl Write) {
@@ -13,8 +13,9 @@ pub fn run(program: &Program, output: &mut impl Write) {
 
 /// Calls `function`.
 fn call(function: &Function, output: &mut impl Write) {
-    let mut variables = Variables::new(function.variable_types.len());
-    for statement in &function.body {
+    // The value of each variable, indexed by its id. `None` until the variable is set.
+    let mut variables = vec![None; function.variable_count()];
+    for statement in function.body() {
         match statement {
             Statement::Print(expression) => {
                 writeln!(output, "{}", evaluate(expression, &variables))
@@ -22,54 +23,30 @@ fn call(function: &Function, output: &mut impl Write) {
             }
             Statement::Let { variable, value } => {
                 let value = evaluate(value, &variables);
-                variables.set(*variable, value);
+                *variables.get_mut(variable.0).expect(VARIABLE_ID_IN_RANGE) = Some(value);
             }
         }
     }
 }
 
-/// Returns the value of `expression`. `variables` contains the variables of its function.
-fn evaluate(expression: &Expression, variables: &Variables) -> i64 {
+/// Returns the value of `expression`.
+/// `variables` contains the value of each variable of its function, or `None` if it is not set.
+fn evaluate(expression: &Expression, variables: &[Option<i64>]) -> i64 {
     match expression {
         Expression::Integer(value) => *value,
-        Expression::Variable(variable) => variables.get(*variable),
-    }
-}
-
-/// The values of the variables of one function call.
-struct Variables {
-    /// The value of each variable, indexed by its id. `None` if the variable is not set yet.
-    values: Vec<Option<i64>>,
-}
-
-impl Variables {
-    /// Creates `count` variables that are not set yet.
-    fn new(count: usize) -> Self {
-        Variables {
-            values: vec![None; count],
-        }
-    }
-
-    fn set(&mut self, variable: VariableId, value: i64) {
-        *self
-            .values
-            .get_mut(variable.0)
-            .expect("a variable id should be smaller than the variable count of its function") =
-            Some(value);
-    }
-
-    fn get(&self, variable: VariableId) -> i64 {
-        self.values
+        Expression::Variable(variable) => variables
             .get(variable.0)
-            .expect("a variable id should be smaller than the variable count of its function")
-            .expect("the resolver should ensure that a variable is set before it is read")
+            .expect(VARIABLE_ID_IN_RANGE)
+            .expect("`typed_ast::Function` should ensure that a variable is set before it is read"),
     }
 }
+
+const VARIABLE_ID_IN_RANGE: &str = "`typed_ast::Function::new` checks variable ids";
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::typed_ast::FunctionId;
+    use crate::typed_ast::{FunctionId, VariableId};
     use crate::types::Type;
 
     /// Runs `program` and returns what it printed.
@@ -90,11 +67,7 @@ mod tests {
         body: Vec<Statement>,
         variable_count: usize,
     ) -> Function {
-        Function {
-            name: name.to_string(),
-            body,
-            variable_types: vec![Type::Int; variable_count],
-        }
+        Function::new(name.to_string(), body, vec![Type::Int; variable_count])
     }
 
     /// A statement that prints the integer `value`.
@@ -164,8 +137,7 @@ mod tests {
         let body = vec![let_statement(0, Expression::Integer(42)), print_variable(0)];
         assert_eq!(
             run_to_string(&main_with_body_and_variables(body, 1)),
-            "42
-"
+            "42\n"
         );
     }
 
@@ -174,31 +146,12 @@ mod tests {
         let body = vec![
             let_statement(0, Expression::Integer(1)),
             let_statement(1, Expression::Variable(VariableId(0))),
-            let_statement(0, Expression::Integer(2)),
             print_variable(0),
             print_variable(1),
         ];
         assert_eq!(
             run_to_string(&main_with_body_and_variables(body, 2)),
-            "2
-1
-"
+            "1\n1\n"
         );
-    }
-
-    #[test]
-    #[should_panic(
-        expected = "the resolver should ensure that a variable is set before it is read"
-    )]
-    fn reading_a_variable_that_is_not_set_panics() {
-        run_to_string(&main_with_body_and_variables(vec![print_variable(0)], 1));
-    }
-
-    #[test]
-    #[should_panic(
-        expected = "a variable id should be smaller than the variable count of its function"
-    )]
-    fn reading_a_variable_that_does_not_exist_panics() {
-        run_to_string(&main_with_body(vec![print_variable(0)]));
     }
 }
