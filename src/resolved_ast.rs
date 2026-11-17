@@ -1,4 +1,4 @@
-//! The resolved AST. The resolver produces it and the outliner consumes it.
+//! The resolved AST. The resolver produces it and the interpreter runs it.
 //!
 //! It is the AST of a program whose names have been checked:
 //! function names are unique, and the `main` function exists.
@@ -28,6 +28,13 @@ impl Program {
     pub fn main(&self) -> FunctionId {
         self.main
     }
+
+    /// The function `id`. Panics if the program has no such function.
+    pub fn function(&self, id: FunctionId) -> &Function {
+        self.functions
+            .get(id.0)
+            .expect("a function id should refer to a function of the program")
+    }
 }
 
 /// The index of a function in the functions of a program.
@@ -42,5 +49,15 @@ mod tests {
     #[should_panic(expected = "the `main` function should be one of the functions of the program")]
     fn program_with_an_invalid_main_id_panics() {
         Program::new(vec![], FunctionId(0));
+    }
+
+    #[test]
+    #[should_panic(expected = "a function id should refer to a function of the program")]
+    fn function_with_an_invalid_id_panics() {
+        let main = Function {
+            name: "main".to_string(),
+            body: vec![],
+        };
+        Program::new(vec![main], FunctionId(0)).function(FunctionId(1));
     }
 }

@@ -139,6 +139,9 @@ The host runs the loop and adds three segments to the program of `dds0`:
 
 ### `on` blocks
 
+This section is not decided. A first version of `on` blocks was implemented and then removed,
+because it was not clear how they should work.
+
 `on <device> { ... }` says that the code of the block runs on a device.
 Its statements are placed at the current time.
 The compiler fuses all the code for one device into one program, in the order of time.
@@ -227,8 +230,7 @@ flowchart LR
   All errors in the user's program are reported before any target compiles,
   because a target compile can be slow (an FPGA build can take minutes).
   Type checking also infers which outputs each function drives.
-- **Partitioning** groups the code by device. It generalizes the current outliner:
-  today one `on` block gives one kernel; then one region gives one kernel per device it uses.
+- **Partitioning** groups the code by device. One region gives one device program per device it uses.
 - **Synchronization** chooses how the device programs start together, from the hardware description.
   Possible strategies:
   - the host starts all devices (simple, not precise);

@@ -1,5 +1,4 @@
-//! The abstract syntax tree (AST). The parser produces it and the outliner consumes it.
-//! The targets also consume the body of `on` blocks.
+//! The abstract syntax tree (AST). The parser produces it and the resolver consumes it.
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Program {
@@ -18,9 +17,4 @@ pub struct Function {
 pub enum Statement {
     /// Prints an integer on its own line.
     Print(i64),
-    /// Runs `body` on the target device named `target`, instead of on the host.
-    On {
-        target: String,
-        body: Vec<Statement>,
-    },
 }

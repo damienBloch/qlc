@@ -56,26 +56,6 @@ fn only_main_runs() {
 }
 
 #[test]
-fn on_sim_block_runs_on_the_simulated_device() {
-    assert_success(
-        &run_program("on_sim.ql"),
-        "1
-sim: 2
-sim: 3
-4
-",
-    );
-}
-
-#[test]
-fn unknown_target() {
-    assert_error(
-        &run_program("unknown_target.ql"),
-        "unknown target `unknown`",
-    );
-}
-
-#[test]
 fn integer_too_large() {
     assert_error(
         &run_program("integer_too_large.ql"),

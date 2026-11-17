@@ -26,7 +26,8 @@ impl fmt::Display for ResolveError {
 }
 
 /// Checks the names of `program` and returns its resolved AST.
-pub fn resolve(program: ast::Program) -> Result<resolved_ast::Program, ResolveError> {
+pub fn
+resolve(program: ast::Program) -> Result<resolved_ast::Program, ResolveError> {
     check_no_duplicate_functions(&program)?;
     let main = program
         .functions

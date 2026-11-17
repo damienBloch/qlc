@@ -2,19 +2,15 @@
 //!
 //! The work is split in stages. Each stage consumes the output of the previous one:
 //! source text -> [`lexer`] -> tokens -> [`parser`] -> AST -> [`resolver`] -> resolved AST
-//! -> [`outliner`] -> host IR -> [`interpreter`].
-//! The outliner sends the body of `on` blocks to the [`targets`].
+//! -> [`interpreter`].
 //! See `docs/architecture.md` for details.
 
 pub mod ast;
-pub mod host_ir;
 pub mod interpreter;
 pub mod lexer;
-pub mod outliner;
 pub mod parser;
 pub mod resolved_ast;
 pub mod resolver;
-pub mod targets;
 
 use std::fmt;
 use std::io::Write;
@@ -25,7 +21,6 @@ pub enum Error {
     Lex(lexer::LexError),
     Parse(parser::ParseError),
     Resolve(resolver::ResolveError),
-    Outline(outliner::OutlineError),
 }
 
 impl fmt::Display for Error {
@@ -34,7 +29,6 @@ impl fmt::Display for Error {
             Error::Lex(error) => write!(f, "{error}"),
             Error::Parse(error) => write!(f, "{error}"),
             Error::Resolve(error) => write!(f, "{error}"),
-            Error::Outline(error) => write!(f, "{error}"),
         }
     }
 }
@@ -44,8 +38,6 @@ pub fn run_source(source: &str, output: &mut impl Write) -> Result<(), Error> {
     let tokens = lexer::tokenize(source).map_err(Error::Lex)?;
     let program = parser::parse(&tokens).map_err(Error::Parse)?;
     let program = resolver::resolve(program).map_err(Error::Resolve)?;
-    let program =
-        outliner::outline(&program, &targets::Registry::builtin()).map_err(Error::Outline)?;
     interpreter::run(&program, output);
     Ok(())
 }
