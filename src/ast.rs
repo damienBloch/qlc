@@ -15,6 +15,12 @@ pub struct Function {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Statement {
-    /// Prints an integer on its own line.
-    Print(i64),
+    /// Prints the value of an expression on its own line.
+    Print(Expression),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Expression {
+    /// An integer literal, such as `42`.
+    Integer(i64),
 }

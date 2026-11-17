@@ -77,15 +77,17 @@ The language currently supports functions without parameters.
 A function body is a list of statements:
 
 ```text
-program   = function*
-function  = "fn" identifier "(" ")" block
-block     = "{" statement* "}"
-statement = print
-print     = "print" "(" integer ")" ";"
+program    = function*
+function   = "fn" identifier "(" ")" block
+block      = "{" statement* "}"
+statement  = print
+print      = "print" "(" expression ")" ";"
+expression = integer
 ```
 
 An integer is a sequence of ASCII digits whose value fits in an `i64`.
-`print` writes the integer on its own line on stdout.
+An expression is an integer literal. More kinds of expressions will be added.
+`print` writes the value of the expression on its own line on stdout.
 
 A program must contain exactly one function named `main`.
 Function names must be unique.

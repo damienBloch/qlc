@@ -4,7 +4,7 @@
 
 use std::io::Write;
 
-use crate::ast::{Function, Statement};
+use crate::ast::{Expression, Function, Statement};
 use crate::resolved_ast::Program;
 
 /// Runs the `main` function of `program`. What the program prints is written to `output`.
@@ -16,10 +16,16 @@ pub fn run(program: &Program, output: &mut impl Write) {
 fn call(function: &Function, output: &mut impl Write) {
     for statement in &function.body {
         match statement {
-            Statement::Print(value) => {
-                writeln!(output, "{value}").expect("writing the program output should succeed")
-            }
+            Statement::Print(expression) => writeln!(output, "{}", evaluate(expression))
+                .expect("writing the program output should succeed"),
         }
+    }
+}
+
+/// Returns the value of `expression`.
+fn evaluate(expression: &Expression) -> i64 {
+    match expression {
+        Expression::Integer(value) => *value,
     }
 }
 
@@ -42,6 +48,11 @@ mod tests {
         }
     }
 
+    /// A statement that prints the integer `value`.
+    fn print(value: i64) -> Statement {
+        Statement::Print(Expression::Integer(value))
+    }
+
     /// A program with only a `main` function, whose body is `body`.
     fn main_with_body(body: Vec<Statement>) -> Program {
         Program::new(vec![function("main", body)], FunctionId(0))
@@ -56,8 +67,8 @@ mod tests {
     fn runs_only_the_main_function() {
         let program = Program::new(
             vec![
-                function("helper", vec![Statement::Print(1)]),
-                function("main", vec![Statement::Print(2)]),
+                function("helper", vec![print(1)]),
+                function("main", vec![print(2)]),
             ],
             FunctionId(1),
         );
@@ -66,19 +77,12 @@ mod tests {
 
     #[test]
     fn print_writes_the_value_on_its_own_line() {
-        assert_eq!(
-            run_to_string(&main_with_body(vec![Statement::Print(42)])),
-            "42\n"
-        );
+        assert_eq!(run_to_string(&main_with_body(vec![print(42)])), "42\n");
     }
 
     #[test]
     fn statements_run_in_order() {
-        let body = vec![
-            Statement::Print(1),
-            Statement::Print(i64::MAX),
-            Statement::Print(0),
-        ];
+        let body = vec![print(1), print(i64::MAX), print(0)];
         assert_eq!(
             run_to_string(&main_with_body(body)),
             "1\n9223372036854775807\n0\n"

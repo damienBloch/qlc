@@ -3,16 +3,17 @@
 //! Grammar:
 //!
 //! ```text
-//! program   = function*
-//! function  = "fn" identifier "(" ")" block
-//! block     = "{" statement* "}"
-//! statement = print
-//! print     = "print" "(" integer ")" ";"
+//! program    = function*
+//! function   = "fn" identifier "(" ")" block
+//! block      = "{" statement* "}"
+//! statement  = print
+//! print      = "print" "(" expression ")" ";"
+//! expression = integer
 //! ```
 
 use std::fmt;
 
-use crate::ast::{Function, Program, Statement};
+use crate::ast::{Expression, Function, Program, Statement};
 use crate::lexer::Token;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -93,10 +94,21 @@ impl Parser<'_> {
     fn parse_print(&mut self) -> Result<Statement, ParseError> {
         self.expect(&Token::Print)?;
         self.expect(&Token::OpenParen)?;
-        let value = self.expect_integer()?;
+        let value = self.parse_expression()?;
         self.expect(&Token::CloseParen)?;
         self.expect(&Token::Semicolon)?;
         Ok(Statement::Print(value))
+    }
+
+    fn parse_expression(&mut self) -> Result<Expression, ParseError> {
+        let expected = "expression";
+        match self.next_token(expected)? {
+            Token::Integer(value) => Ok(Expression::Integer(*value)),
+            found => Err(ParseError::UnexpectedToken {
+                expected: expected.to_string(),
+                found: found.clone(),
+            }),
+        }
     }
 
     /// Consumes the next token if it is equal to `expected`. Returns an error otherwise.
@@ -117,18 +129,6 @@ impl Parser<'_> {
         let expected = "identifier";
         match self.next_token(expected)? {
             Token::Identifier(name) => Ok(name.clone()),
-            found => Err(ParseError::UnexpectedToken {
-                expected: expected.to_string(),
-                found: found.clone(),
-            }),
-        }
-    }
-
-    /// Consumes the next token if it is an integer and returns its value.
-    fn expect_integer(&mut self) -> Result<i64, ParseError> {
-        let expected = "integer";
-        match self.next_token(expected)? {
-            Token::Integer(value) => Ok(*value),
             found => Err(ParseError::UnexpectedToken {
                 expected: expected.to_string(),
                 found: found.clone(),
@@ -170,6 +170,11 @@ mod tests {
             name: name.to_string(),
             body,
         }
+    }
+
+    /// A statement that prints the integer `value`.
+    fn print(value: i64) -> Statement {
+        Statement::Print(Expression::Integer(value))
     }
 
     /// Parses `source` and returns the body of its only function.
@@ -242,17 +247,14 @@ mod tests {
 
     #[test]
     fn print_statement() {
-        assert_eq!(
-            parse_body("fn main() { print(42); }"),
-            Ok(vec![Statement::Print(42)])
-        );
+        assert_eq!(parse_body("fn main() { print(42); }"), Ok(vec![print(42)]));
     }
 
     #[test]
     fn several_statements() {
         assert_eq!(
             parse_body("fn main() { print(1); print(2); }"),
-            Ok(vec![Statement::Print(1), Statement::Print(2)])
+            Ok(vec![print(1), print(2)])
         );
     }
 
@@ -278,11 +280,11 @@ mod tests {
     }
 
     #[test]
-    fn print_without_integer() {
+    fn print_without_expression() {
         assert_eq!(
             parse_source("fn main() { print(); }"),
             Err(ParseError::UnexpectedToken {
-                expected: "integer".to_string(),
+                expected: "expression".to_string(),
                 found: Token::CloseParen,
             })
         );
