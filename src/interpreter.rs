@@ -17,10 +17,11 @@ fn call(function: &Function, output: &mut impl Write) {
     let mut variables = vec![None; function.variable_count()];
     for statement in function.body() {
         match statement {
-            Statement::Print(expression) => {
-                writeln!(output, "{}", evaluate(expression, &variables))
-                    .expect("writing the program output should succeed")
-            }
+            Statement::Print(expression) => match evaluate(expression, &variables) {
+                Value::Int(value) => {
+                    writeln!(output, "{value}").expect("writing the program output should succeed")
+                }
+            },
             Statement::Let { variable, value } => {
                 let value = evaluate(value, &variables);
                 *variables.get_mut(variable.0).expect(VARIABLE_ID_IN_RANGE) = Some(value);
@@ -31,14 +32,20 @@ fn call(function: &Function, output: &mut impl Write) {
 
 /// Returns the value of `expression`.
 /// `variables` contains the value of each variable of its function, or `None` if it is not set.
-fn evaluate(expression: &Expression, variables: &[Option<i64>]) -> i64 {
+fn evaluate(expression: &Expression, variables: &[Option<Value>]) -> Value {
     match expression {
-        Expression::Integer(value) => *value,
+        Expression::Integer(value) => Value::Int(*value),
         Expression::Variable(variable) => variables
             .get(variable.0)
             .expect(VARIABLE_ID_IN_RANGE)
             .expect("`typed_ast::Function` should ensure that a variable is set before it is read"),
     }
+}
+
+/// A value computed by the program.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Value {
+    Int(i64),
 }
 
 const VARIABLE_ID_IN_RANGE: &str = "`typed_ast::Function::new` checks variable ids";
