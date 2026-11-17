@@ -30,7 +30,10 @@ flowchart LR
 | Interpreter | `src/interpreter.rs` | `&resolved_ast::Program` | `()`                    |
 
 The resolver checks the names of the program: function names must be unique,
-and there must be a `main` function. The resolved AST stores which function is `main`.
+there must be a `main` function, and each variable must be defined before it is used.
+The resolved AST stores which function is `main`.
+It refers to each variable by a `VariableId`, its index in its function, instead of its name.
+Each function stores its number of variables, so the interpreter can store their values in a `Vec`.
 
 The interpreter also takes an output writer (`&mut impl Write`).
 `print` writes to it.
@@ -82,14 +85,21 @@ A function body is a list of statements:
 program    = function*
 function   = "fn" identifier "(" ")" block
 block      = "{" statement* "}"
-statement  = print
+statement  = print | let
 print      = "print" "(" expression ")" ";"
-expression = integer
+let        = "let" identifier "=" expression ";"
+expression = integer | identifier
 ```
 
 An integer is a sequence of ASCII digits whose value fits in an `i64`.
-An expression is an integer literal. More kinds of expressions will be added.
+An expression is an integer literal or the name of a variable.
 `print` writes the value of the expression on its own line on stdout.
+
+`let x = <expression>;` defines a variable `x` with the value of the expression.
+A variable can be used after its `let`, until the end of the function.
+A `let` can reuse the name of a variable. It then defines a new variable,
+and the name refers to the new variable after this `let`.
+In `let x = x;`, the value refers to the previous `x`.
 
 A program must contain exactly one function named `main`.
 Function names must be unique.

@@ -9,6 +9,8 @@ pub enum Token {
     Fn,
     /// The `print` keyword.
     Print,
+    /// The `let` keyword.
+    Let,
     Identifier(String),
     /// A non-negative integer literal, such as `42`.
     /// Negative numbers will be written with a unary minus, which is not supported yet.
@@ -18,6 +20,7 @@ pub enum Token {
     OpenBrace,
     CloseBrace,
     Semicolon,
+    Equals,
 }
 
 impl fmt::Display for Token {
@@ -25,6 +28,7 @@ impl fmt::Display for Token {
         match self {
             Token::Fn => write!(f, "`fn`"),
             Token::Print => write!(f, "`print`"),
+            Token::Let => write!(f, "`let`"),
             Token::Identifier(name) => write!(f, "identifier `{name}`"),
             Token::Integer(value) => write!(f, "integer `{value}`"),
             Token::OpenParen => write!(f, "`(`"),
@@ -32,6 +36,7 @@ impl fmt::Display for Token {
             Token::OpenBrace => write!(f, "`{{`"),
             Token::CloseBrace => write!(f, "`}}`"),
             Token::Semicolon => write!(f, "`;`"),
+            Token::Equals => write!(f, "`=`"),
         }
     }
 }
@@ -88,6 +93,7 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, LexError> {
                 '{' => Token::OpenBrace,
                 '}' => Token::CloseBrace,
                 ';' => Token::Semicolon,
+                '=' => Token::Equals,
                 _ => return Err(LexError::UnexpectedCharacter(c)),
             };
             tokens.push(token);
@@ -110,6 +116,7 @@ fn keyword_or_identifier(word: String) -> Token {
     match word.as_str() {
         "fn" => Token::Fn,
         "print" => Token::Print,
+        "let" => Token::Let,
         _ => Token::Identifier(word),
     }
 }
@@ -168,9 +175,24 @@ mod tests {
     }
 
     #[test]
+    fn let_statement() {
+        assert_eq!(
+            tokenize("let x = 1;"),
+            Ok(vec![
+                Token::Let,
+                identifier("x"),
+                Token::Equals,
+                Token::Integer(1),
+                Token::Semicolon,
+            ])
+        );
+    }
+
+    #[test]
     fn keyword_prefix_is_an_identifier() {
         assert_eq!(tokenize("fnord"), Ok(vec![identifier("fnord")]));
         assert_eq!(tokenize("printer"), Ok(vec![identifier("printer")]));
+        assert_eq!(tokenize("letter"), Ok(vec![identifier("letter")]));
     }
 
     #[test]

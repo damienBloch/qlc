@@ -6,9 +6,10 @@
 //! program    = function*
 //! function   = "fn" identifier "(" ")" block
 //! block      = "{" statement* "}"
-//! statement  = print
+//! statement  = print | let
 //! print      = "print" "(" expression ")" ";"
-//! expression = integer
+//! let        = "let" identifier "=" expression ";"
+//! expression = integer | identifier
 //! ```
 
 use std::fmt;
@@ -80,6 +81,7 @@ impl<'a> Parser<'a> {
     fn parse_statement(&mut self) -> Result<Statement, ParseError> {
         match self.peek() {
             Some(Token::Print) => self.parse_print(),
+            Some(Token::Let) => self.parse_let(),
             found => Err(unexpected("statement", found)),
         }
     }
@@ -93,9 +95,19 @@ impl<'a> Parser<'a> {
         Ok(Statement::Print(value))
     }
 
+    fn parse_let(&mut self) -> Result<Statement, ParseError> {
+        self.expect(&Token::Let)?;
+        let name = self.expect_identifier()?;
+        self.expect(&Token::Equals)?;
+        let value = self.parse_expression()?;
+        self.expect(&Token::Semicolon)?;
+        Ok(Statement::Let { name, value })
+    }
+
     fn parse_expression(&mut self) -> Result<Expression, ParseError> {
         match self.next_token() {
             Some(Token::Integer(value)) => Ok(Expression::Integer(*value)),
+            Some(Token::Identifier(name)) => Ok(Expression::Variable(name.clone())),
             found => Err(unexpected("expression", found)),
         }
     }
@@ -164,6 +176,18 @@ mod tests {
     /// A statement that prints the integer `value`.
     fn print(value: i64) -> Statement {
         Statement::Print(Expression::Integer(value))
+    }
+
+    /// A statement that defines the variable `name` with the value `value`.
+    fn let_statement(name: &str, value: Expression) -> Statement {
+        Statement::Let {
+            name: name.to_string(),
+            value,
+        }
+    }
+
+    fn variable(name: &str) -> Expression {
+        Expression::Variable(name.to_string())
     }
 
     /// Parses `source` and returns the body of its only function.
@@ -244,6 +268,52 @@ mod tests {
         assert_eq!(
             parse_body("fn main() { print(1); print(2); }"),
             Ok(vec![print(1), print(2)])
+        );
+    }
+
+    #[test]
+    fn let_statement_with_integer() {
+        assert_eq!(
+            parse_body("fn main() { let x = 1; }"),
+            Ok(vec![let_statement("x", Expression::Integer(1))])
+        );
+    }
+
+    #[test]
+    fn let_statement_with_variable() {
+        assert_eq!(
+            parse_body("fn main() { let y = x; }"),
+            Ok(vec![let_statement("y", variable("x"))])
+        );
+    }
+
+    #[test]
+    fn print_variable() {
+        assert_eq!(
+            parse_body("fn main() { print(x); }"),
+            Ok(vec![Statement::Print(variable("x"))])
+        );
+    }
+
+    #[test]
+    fn let_without_equals() {
+        assert_eq!(
+            parse_source("fn main() { let x 1; }"),
+            Err(ParseError::UnexpectedToken {
+                expected: "`=`".to_string(),
+                found: Token::Integer(1),
+            })
+        );
+    }
+
+    #[test]
+    fn let_without_name() {
+        assert_eq!(
+            parse_source("fn main() { let = 1; }"),
+            Err(ParseError::UnexpectedToken {
+                expected: "identifier".to_string(),
+                found: Token::Equals,
+            })
         );
     }
 

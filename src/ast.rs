@@ -17,10 +17,14 @@ pub struct Function {
 pub enum Statement {
     /// Prints the value of an expression on its own line.
     Print(Expression),
+    /// Defines a variable named `name` and sets it to the value of `value`.
+    Let { name: String, value: Expression },
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Expression {
     /// An integer literal, such as `42`.
     Integer(i64),
+    /// The value of the variable named by the identifier.
+    Variable(String),
 }

@@ -1,8 +1,9 @@
 //! The resolved AST. The resolver produces it and the interpreter runs it.
 //!
 //! It is the AST of a program whose names have been checked:
-//! function names are unique, and the `main` function exists.
-//! It has its own types, so that the resolver can store what it finds about names.
+//! function names are unique, the `main` function exists,
+//! and each variable is defined before it is used.
+//! Variables are referred to by a [`VariableId`] instead of their name.
 
 pub struct Program {
     functions: Vec<Function>,
@@ -40,23 +41,36 @@ impl Program {
 pub struct Function {
     pub name: String,
     pub body: Vec<Statement>,
+    /// The number of variables of the function. Their ids are `0..variable_count`.
+    pub variable_count: usize,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Statement {
     /// Prints the value of an expression on its own line.
     Print(Expression),
+    /// Sets `variable` to the value of `value`.
+    Let {
+        variable: VariableId,
+        value: Expression,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Expression {
     /// An integer literal, such as `42`.
     Integer(i64),
+    /// The value of a variable.
+    Variable(VariableId),
 }
 
 /// The index of a function in the functions of a program.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FunctionId(pub usize);
+
+/// The index of a variable in the variables of its function.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VariableId(pub usize);
 
 #[cfg(test)]
 mod tests {
@@ -74,6 +88,7 @@ mod tests {
         let main = Function {
             name: "main".to_string(),
             body: vec![],
+            variable_count: 0,
         };
         Program::new(vec![main], FunctionId(0)).function(FunctionId(1));
     }

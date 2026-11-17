@@ -56,6 +56,23 @@ fn only_main_runs() {
 }
 
 #[test]
+fn variables() {
+    assert_success(
+        &run_program("variables.ql"),
+        "1
+1
+2
+1
+",
+    );
+}
+
+#[test]
+fn unknown_variable() {
+    assert_error(&run_program("unknown_variable.ql"), "unknown variable `x`");
+}
+
+#[test]
 fn integer_too_large() {
     assert_error(
         &run_program("integer_too_large.ql"),
