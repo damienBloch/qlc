@@ -36,8 +36,10 @@ The interpreter also takes an output writer (`&mut impl Write`).
 `print` writes to it.
 The command line passes stdout, and the unit tests pass a `Vec<u8>` to check the output.
 
-The AST types are in `src/ast.rs`. They are shared by the parser, the resolver and the interpreter.
+The AST types are in `src/ast.rs`. They are shared by the parser and the resolver.
 The resolved AST types are in `src/resolved_ast.rs`. They are shared by the resolver and the interpreter.
+The resolved AST has its own types for functions, statements and expressions, separate from the AST.
+So the resolver can store what it finds about names, and the interpreter does not depend on the AST.
 
 Each stage is one public function.
 A stage only depends on the types of its input and output.

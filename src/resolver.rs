@@ -33,10 +33,31 @@ pub fn resolve(program: ast::Program) -> Result<resolved_ast::Program, ResolveEr
         .iter()
         .position(|function| function.name == "main")
         .ok_or(ResolveError::MissingMain)?;
-    Ok(resolved_ast::Program::new(
-        program.functions,
-        FunctionId(main),
-    ))
+    let functions = program
+        .functions
+        .into_iter()
+        .map(resolve_function)
+        .collect();
+    Ok(resolved_ast::Program::new(functions, FunctionId(main)))
+}
+
+fn resolve_function(function: ast::Function) -> resolved_ast::Function {
+    resolved_ast::Function {
+        name: function.name,
+        body: function.body.into_iter().map(resolve_statement).collect(),
+    }
+}
+
+fn resolve_statement(statement: ast::Statement) -> resolved_ast::Statement {
+    match statement {
+        ast::Statement::Print(value) => resolved_ast::Statement::Print(resolve_expression(value)),
+    }
+}
+
+fn resolve_expression(expression: ast::Expression) -> resolved_ast::Expression {
+    match expression {
+        ast::Expression::Integer(value) => resolved_ast::Expression::Integer(value),
+    }
 }
 
 fn check_no_duplicate_functions(program: &ast::Program) -> Result<(), ResolveError> {
@@ -95,6 +116,26 @@ mod tests {
     #[test]
     fn empty_program_has_no_main() {
         assert_eq!(resolve(program(&[])).err(), Some(ResolveError::MissingMain));
+    }
+
+    #[test]
+    fn function_bodies_are_resolved() {
+        let program = ast::Program {
+            functions: vec![ast::Function {
+                name: "main".to_string(),
+                body: vec![ast::Statement::Print(ast::Expression::Integer(42))],
+            }],
+        };
+        let program = resolve(program).expect("the program should be valid");
+        assert_eq!(
+            program.function(program.main()),
+            &resolved_ast::Function {
+                name: "main".to_string(),
+                body: vec![resolved_ast::Statement::Print(
+                    resolved_ast::Expression::Integer(42)
+                )],
+            }
+        );
     }
 
     #[test]

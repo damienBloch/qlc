@@ -4,8 +4,7 @@
 
 use std::io::Write;
 
-use crate::ast::{Expression, Function, Statement};
-use crate::resolved_ast::Program;
+use crate::resolved_ast::{Expression, Function, Program, Statement};
 
 /// Runs the `main` function of `program`. What the program prints is written to `output`.
 pub fn run(program: &Program, output: &mut impl Write) {

@@ -2,8 +2,7 @@
 //!
 //! It is the AST of a program whose names have been checked:
 //! function names are unique, and the `main` function exists.
-
-use crate::ast::Function;
+//! It has its own types, so that the resolver can store what it finds about names.
 
 pub struct Program {
     functions: Vec<Function>,
@@ -35,6 +34,24 @@ impl Program {
             .get(id.0)
             .expect("a function id should refer to a function of the program")
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Function {
+    pub name: String,
+    pub body: Vec<Statement>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Statement {
+    /// Prints the value of an expression on its own line.
+    Print(Expression),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Expression {
+    /// An integer literal, such as `42`.
+    Integer(i64),
 }
 
 /// The index of a function in the functions of a program.
