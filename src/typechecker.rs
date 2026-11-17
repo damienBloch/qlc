@@ -4,25 +4,40 @@
 //! The type of a variable is the type of the value of its `let`.
 //! Today `Int` is the only type, so no type error can occur.
 
+use std::fmt;
+
 use crate::resolved_ast;
 use crate::typed_ast;
 use crate::types::Type;
 
-/// Checks the types of `program` and returns its typed AST.
-pub fn check(program: resolved_ast::Program) -> typed_ast::Program {
-    let (functions, main) = program.into_parts();
-    let functions = functions.into_iter().map(check_function).collect();
-    typed_ast::Program::new(functions, main)
+/// An error in the types of a program. It has no variants yet, because no type error can occur.
+#[derive(Debug, PartialEq, Eq)]
+pub enum TypeError {}
+
+impl fmt::Display for TypeError {
+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {}
+    }
 }
 
-fn check_function(function: resolved_ast::Function) -> typed_ast::Function {
+/// Checks the types of `program` and returns its typed AST.
+pub fn check(program: resolved_ast::Program) -> Result<typed_ast::Program, TypeError> {
+    let (functions, main) = program.into_parts();
+    let functions = functions
+        .into_iter()
+        .map(check_function)
+        .collect::<Result<_, _>>()?;
+    Ok(typed_ast::Program::new(functions, main))
+}
+
+fn check_function(function: resolved_ast::Function) -> Result<typed_ast::Function, TypeError> {
     let (name, body, variable_count) = function.into_parts();
     // The type of each variable, indexed by its id. `None` until its `let` is checked.
     let mut variable_types = vec![None; variable_count];
     let body = body
         .into_iter()
         .map(|statement| check_statement(statement, &mut variable_types))
-        .collect();
+        .collect::<Result<_, _>>()?;
     let variable_types = variable_types
         .into_iter()
         .map(|variable_type| {
@@ -31,7 +46,7 @@ fn check_function(function: resolved_ast::Function) -> typed_ast::Function {
             )
         })
         .collect();
-    typed_ast::Function::new(name, body, variable_types)
+    Ok(typed_ast::Function::new(name, body, variable_types))
 }
 
 /// Checks `statement`. `variable_types` contains the type of each variable of its function,
@@ -39,12 +54,12 @@ fn check_function(function: resolved_ast::Function) -> typed_ast::Function {
 fn check_statement(
     statement: resolved_ast::Statement,
     variable_types: &mut [Option<Type>],
-) -> typed_ast::Statement {
+) -> Result<typed_ast::Statement, TypeError> {
     match statement {
         resolved_ast::Statement::Print(value) => {
             let (value, value_type) = check_expression(value, variable_types);
             match value_type {
-                Type::Int => typed_ast::Statement::Print(value),
+                Type::Int => Ok(typed_ast::Statement::Print(value)),
             }
         }
         resolved_ast::Statement::Let { variable, value } => {
@@ -52,7 +67,7 @@ fn check_statement(
             *variable_types
                 .get_mut(variable.0)
                 .expect(VARIABLE_ID_IN_RANGE) = Some(value_type);
-            typed_ast::Statement::Let { variable, value }
+            Ok(typed_ast::Statement::Let { variable, value })
         }
     }
 }
@@ -90,6 +105,7 @@ mod tests {
     fn check_main(body: Vec<resolved_ast::Statement>, variable_count: usize) -> typed_ast::Program {
         let main = resolved_ast::Function::new("main".to_string(), body, variable_count);
         check(resolved_ast::Program::new(vec![main], FunctionId(0)))
+            .expect("the program should have no type error")
     }
 
     /// The types of the variables of the `main` function of `program`.
@@ -141,7 +157,8 @@ mod tests {
     fn main_stays_the_same() {
         let functions =
             ["helper", "main"].map(|name| resolved_ast::Function::new(name.to_string(), vec![], 0));
-        let program = check(resolved_ast::Program::new(functions.into(), FunctionId(1)));
+        let program = check(resolved_ast::Program::new(functions.into(), FunctionId(1)))
+            .expect("the program should have no type error");
         assert_eq!(program.main(), FunctionId(1));
     }
 

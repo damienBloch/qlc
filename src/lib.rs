@@ -24,6 +24,7 @@ pub enum Error {
     Lex(lexer::LexError),
     Parse(parser::ParseError),
     Resolve(resolver::ResolveError),
+    Type(typechecker::TypeError),
 }
 
 impl fmt::Display for Error {
@@ -32,6 +33,7 @@ impl fmt::Display for Error {
             Error::Lex(error) => write!(f, "{error}"),
             Error::Parse(error) => write!(f, "{error}"),
             Error::Resolve(error) => write!(f, "{error}"),
+            Error::Type(error) => write!(f, "{error}"),
         }
     }
 }
@@ -41,7 +43,7 @@ pub fn run_source(source: &str, output: &mut impl Write) -> Result<(), Error> {
     let tokens = lexer::tokenize(source).map_err(Error::Lex)?;
     let program = parser::parse(&tokens).map_err(Error::Parse)?;
     let program = resolver::resolve(program).map_err(Error::Resolve)?;
-    let program = typechecker::check(program);
+    let program = typechecker::check(program).map_err(Error::Type)?;
     interpreter::run(&program, output);
     Ok(())
 }

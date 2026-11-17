@@ -66,7 +66,8 @@ So the algorithm of a stage can be changed without changing the other stages.
 
 ## Errors
 
-Each stage that can fail has its own error type: `LexError`, `ParseError` and `ResolveError`.
+Each stage that can fail has its own error type: `LexError`, `ParseError`, `ResolveError` and `TypeError`.
+`TypeError` has no variants yet.
 `src/lib.rs` wraps them in one `Error` type.
 
 There are two kinds of problems:
