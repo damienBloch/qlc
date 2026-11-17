@@ -40,7 +40,7 @@ Each function stores the name of each of its variables, indexed by its `Variable
 Several variables can have the same name. The names are used in error messages.
 
 The type checker gives a type to each variable: the type of the value of its `let`.
-The typed AST stores the type of each variable of each function, indexed by its `VariableId`.
+The typed AST stores the name and the type of each variable of each function, indexed by its `VariableId`.
 The interpreter uses the number of variables to store their values in a `Vec`.
 The types are in `src/types.rs`. Each type has a kind:
 

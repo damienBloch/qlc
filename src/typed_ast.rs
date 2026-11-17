@@ -1,7 +1,7 @@
 //! The typed AST. The type checker produces it and the interpreter runs it.
 //!
 //! It is the resolved AST of a program whose types have been checked.
-//! Each variable has a type.
+//! Each variable has a name and a type.
 //!
 //! The body of each function follows these rules about variables:
 //!
@@ -49,18 +49,18 @@ impl Program {
 pub struct Function {
     name: String,
     body: Vec<Statement>,
-    variable_types: Vec<Type>,
+    variables: Vec<Variable>,
 }
 
 impl Function {
-    /// Creates a function whose variables have the types `variable_types`.
+    /// Creates a function whose variables are `variables`, indexed by their [`VariableId`].
     /// Panics if `body` does not follow the rules about variables of the module documentation.
-    pub fn new(name: String, body: Vec<Statement>, variable_types: Vec<Type>) -> Self {
-        check_variables(&body, variable_types.len());
+    pub fn new(name: String, body: Vec<Statement>, variables: Vec<Variable>) -> Self {
+        check_variables(&body, variables.len());
         Function {
             name,
             body,
-            variable_types,
+            variables,
         }
     }
 
@@ -72,15 +72,23 @@ impl Function {
         &self.body
     }
 
-    /// The type of each variable of the function, indexed by its [`VariableId`].
-    pub fn variable_types(&self) -> &[Type] {
-        &self.variable_types
+    /// The variables of the function, indexed by their [`VariableId`].
+    pub fn variables(&self) -> &[Variable] {
+        &self.variables
     }
 
     /// The number of variables of the function. Their ids are `0..variable_count`.
     pub fn variable_count(&self) -> usize {
-        self.variable_types.len()
+        self.variables.len()
     }
+}
+
+/// A variable of a function.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Variable {
+    /// The name of the variable. Several variables of a function can have the same name.
+    pub name: String,
+    pub variable_type: Type,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -144,7 +152,7 @@ fn check_variables_read(expression: &Expression, is_set: &[bool]) {
     }
 }
 
-const VARIABLE_ID_IN_RANGE: &str = "variable id should have a type in `variable_types`";
+const VARIABLE_ID_IN_RANGE: &str = "variable id should be smaller than the number of variables";
 
 #[cfg(test)]
 mod tests {
@@ -152,7 +160,13 @@ mod tests {
 
     /// A function named `main` with the body `body` and `variable_count` variables.
     fn function(body: Vec<Statement>, variable_count: usize) -> Function {
-        Function::new("main".to_string(), body, vec![Type::Int; variable_count])
+        let variables = (0..variable_count)
+            .map(|i| Variable {
+                name: format!("v{i}"),
+                variable_type: Type::Int,
+            })
+            .collect();
+        Function::new("main".to_string(), body, variables)
     }
 
     /// A statement that sets `variable` to the integer `value`.
@@ -183,7 +197,7 @@ mod tests {
     }
 
     #[test]
-    fn variable_count_is_the_number_of_variable_types() {
+    fn variable_count_is_the_number_of_variables() {
         assert_eq!(
             function(vec![let_integer(0, 1), let_integer(1, 2)], 2).variable_count(),
             2
@@ -191,13 +205,13 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "variable id should have a type in `variable_types`")]
+    #[should_panic(expected = "variable id should be smaller than the number of variables")]
     fn let_of_a_variable_out_of_range_panics() {
         function(vec![let_integer(1, 1)], 1);
     }
 
     #[test]
-    #[should_panic(expected = "variable id should have a type in `variable_types`")]
+    #[should_panic(expected = "variable id should be smaller than the number of variables")]
     fn read_of_a_variable_out_of_range_panics() {
         function(vec![let_integer(0, 1), print_variable(1)], 1);
     }

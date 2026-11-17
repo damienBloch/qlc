@@ -65,7 +65,7 @@ const VARIABLE_ID_IN_RANGE: &str = "`typed_ast::Function::new` checks variable i
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::typed_ast::{FunctionId, VariableId};
+    use crate::typed_ast::{FunctionId, Variable, VariableId};
     use crate::types::Type;
 
     /// Runs `program` and returns what it printed.
@@ -86,7 +86,13 @@ mod tests {
         body: Vec<Statement>,
         variable_count: usize,
     ) -> Function {
-        Function::new(name.to_string(), body, vec![Type::Int; variable_count])
+        let variables = (0..variable_count)
+            .map(|i| Variable {
+                name: format!("v{i}"),
+                variable_type: Type::Int,
+            })
+            .collect();
+        Function::new(name.to_string(), body, variables)
     }
 
     /// A statement that prints the integer `value`.

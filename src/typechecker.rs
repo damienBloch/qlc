@@ -45,15 +45,17 @@ fn check_function(function: resolved_ast::Function) -> Result<typed_ast::Functio
         .into_iter()
         .map(|statement| check_statement(statement, &mut variable_types))
         .collect::<Result<_, _>>()?;
-    let variable_types = variable_types
+    let variables = variable_names
         .into_iter()
-        .map(|variable_type| {
-            variable_type.expect(
+        .zip(variable_types)
+        .map(|(name, variable_type)| typed_ast::Variable {
+            name,
+            variable_type: variable_type.expect(
                 "`resolved_ast::Function` should ensure that each variable is set by a `let`",
-            )
+            ),
         })
         .collect();
-    Ok(typed_ast::Function::new(name, body, variable_types))
+    Ok(typed_ast::Function::new(name, body, variables))
 }
 
 /// Checks `statement`. `variable_types` contains the type of each variable of its function,
@@ -148,8 +150,13 @@ mod tests {
     }
 
     /// The types of the variables of the `main` function of `program`.
-    fn main_variable_types(program: &typed_ast::Program) -> &[Type] {
-        program.function(program.main()).variable_types()
+    fn main_variable_types(program: &typed_ast::Program) -> Vec<Type> {
+        program
+            .function(program.main())
+            .variables()
+            .iter()
+            .map(|variable| variable.variable_type)
+            .collect()
     }
 
     /// A resolved statement that sets `variable` to the integer `value`.
@@ -200,7 +207,10 @@ mod tests {
                     },
                     typed_ast::Statement::Print(typed_ast::Expression::Variable(VariableId(0))),
                 ],
-                vec![Type::Int],
+                vec![typed_ast::Variable {
+                    name: "v0".to_string(),
+                    variable_type: Type::Int,
+                }],
             )
         );
     }
