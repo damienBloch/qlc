@@ -102,6 +102,14 @@ fn use_of_a_deleted_sim_device() {
 }
 
 #[test]
+fn sim_device_not_deleted() {
+    assert_error(
+        &run_program("sim_device_not_deleted.ql"),
+        "the value of variable `d` is never used",
+    );
+}
+
+#[test]
 fn integer_too_large() {
     assert_error(
         &run_program("integer_too_large.ql"),

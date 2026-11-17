@@ -2,6 +2,7 @@
 //!
 //! Reading a variable whose type is of kind `Resource` moves its value.
 //! A variable cannot be read after its value is moved.
+//! The value of each such variable must be moved before the end of its function.
 
 use std::fmt;
 
@@ -13,6 +14,8 @@ use crate::types::Kind;
 pub enum LinearityError {
     /// The variable named `variable` is read after its value is moved.
     UseAfterMove { variable: String },
+    /// The value of the variable named `variable` is not moved before the end of its function.
+    ValueNotUsed { variable: String },
 }
 
 impl fmt::Display for LinearityError {
@@ -20,6 +23,9 @@ impl fmt::Display for LinearityError {
         match self {
             LinearityError::UseAfterMove { variable } => {
                 write!(f, "variable `{variable}` is used after its value is moved")
+            }
+            LinearityError::ValueNotUsed { variable } => {
+                write!(f, "the value of variable `{variable}` is never used")
             }
         }
     }
@@ -45,7 +51,17 @@ fn check_function(function: &Function) -> Result<(), LinearityError> {
             }
         }
     }
-    Ok(())
+    let not_used = function
+        .variables()
+        .iter()
+        .zip(is_moved)
+        .find(|(variable, is_moved)| variable.variable_type.kind() == Kind::Resource && !is_moved);
+    match not_used {
+        Some((variable, _)) => Err(LinearityError::ValueNotUsed {
+            variable: variable.name.clone(),
+        }),
+        None => Ok(()),
+    }
 }
 
 /// Checks `expression`, which is in the body of `function`.
@@ -139,6 +155,12 @@ mod tests {
         }
     }
 
+    fn value_not_used(variable: &str) -> LinearityError {
+        LinearityError::ValueNotUsed {
+            variable: variable.to_string(),
+        }
+    }
+
     #[test]
     fn int_can_be_read_several_times() {
         assert_eq!(
@@ -224,6 +246,44 @@ mod tests {
         assert_eq!(
             check(&Program::new(vec![helper, main], FunctionId(1))),
             Err(use_after_move("d"))
+        );
+    }
+
+    #[test]
+    fn int_can_be_unused() {
+        assert_eq!(
+            check_main(vec![let_integer(0, 1)], &[("x", Type::Int)]),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn sim_device_not_deleted_is_an_error() {
+        assert_eq!(
+            check_main(vec![let_sim_device(0)], &[("d", Type::SimDevice)]),
+            Err(value_not_used("d"))
+        );
+    }
+
+    #[test]
+    fn sim_device_moved_to_another_variable_not_deleted_is_an_error() {
+        assert_eq!(
+            check_main(
+                vec![let_sim_device(0), let_variable(1, 0)],
+                &[("d", Type::SimDevice), ("e", Type::SimDevice)]
+            ),
+            Err(value_not_used("e"))
+        );
+    }
+
+    #[test]
+    fn shadowed_sim_device_not_deleted_is_an_error() {
+        assert_eq!(
+            check_main(
+                vec![let_sim_device(0), let_sim_device(1), delete_variable(1)],
+                &[("d", Type::SimDevice), ("d", Type::SimDevice)]
+            ),
+            Err(value_not_used("d"))
         );
     }
 }

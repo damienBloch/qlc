@@ -62,7 +62,9 @@ Reading a variable whose type is of kind `Resource` moves its value,
 for example in `delete(d)` or `let e = d;`.
 A variable cannot be read after its value is moved.
 Otherwise the linearity checker reports a `LinearityError::UseAfterMove`.
-That each resource is used at least once is not checked yet.
+The value of each such variable must be moved before the end of its function.
+Otherwise the linearity checker reports a `LinearityError::ValueNotUsed`.
+So each resource is used exactly once.
 It is a separate stage from the type checker, so that its algorithm can change
 without changing the type checker. For example, branches will need a flow analysis.
 
