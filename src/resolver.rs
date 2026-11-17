@@ -66,7 +66,7 @@ fn resolve_function(function: ast::Function) -> Result<resolved_ast::Function, R
     Ok(resolved_ast::Function::new(
         function.name,
         body,
-        variables.count,
+        variables.names,
     ))
 }
 
@@ -112,16 +112,16 @@ fn resolve_expression(
 struct Variables {
     /// The variable that each name refers to.
     by_name: HashMap<String, VariableId>,
-    /// The number of variables defined so far.
-    count: usize,
+    /// The name of each variable defined so far, indexed by its id.
+    names: Vec<String>,
 }
 
 impl Variables {
     /// Defines a new variable named `name` and returns its id.
     /// After this, `name` refers to the new variable.
     fn define(&mut self, name: String) -> VariableId {
-        let variable = VariableId(self.count);
-        self.count += 1;
+        let variable = VariableId(self.names.len());
+        self.names.push(name.clone());
         self.by_name.insert(name, variable);
         variable
     }
@@ -243,7 +243,7 @@ mod tests {
                 vec![resolved_ast::Statement::Print(
                     resolved_ast::Expression::Integer(42)
                 )],
-                0,
+                vec![],
             )
         );
     }
@@ -402,6 +402,20 @@ mod tests {
                 },
                 resolved_ast::Statement::Delete(resolved_ast::Expression::Variable(VariableId(0))),
             ],
+        );
+    }
+
+    #[test]
+    fn variable_names_are_kept_for_each_let() {
+        let program = resolve(main_with_body(vec![
+            ast_let("x", ast::Expression::Integer(1)),
+            ast_let("y", ast::Expression::Integer(2)),
+            ast_let("x", ast::Expression::Integer(3)),
+        ]))
+        .expect("the program should be valid");
+        assert_eq!(
+            program.function(program.main()).variable_names(),
+            ["x", "y", "x"]
         );
     }
 }

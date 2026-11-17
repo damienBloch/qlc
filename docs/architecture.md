@@ -36,7 +36,8 @@ The resolver checks the names of the program: function names must be unique,
 there must be a `main` function, and each variable must be defined before it is used.
 The resolved AST stores which function is `main`.
 It refers to each variable by a `VariableId`, its index in its function, instead of its name.
-Each function stores its number of variables.
+Each function stores the name of each of its variables, indexed by its `VariableId`.
+Several variables can have the same name. The names are used in error messages.
 
 The type checker gives a type to each variable: the type of the value of its `let`.
 The typed AST stores the type of each variable of each function, indexed by its `VariableId`.

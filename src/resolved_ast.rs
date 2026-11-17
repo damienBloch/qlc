@@ -53,18 +53,18 @@ impl Program {
 pub struct Function {
     name: String,
     body: Vec<Statement>,
-    variable_count: usize,
+    variable_names: Vec<String>,
 }
 
 impl Function {
-    /// Creates a function with `variable_count` variables.
+    /// Creates a function whose variables have the names `variable_names`.
     /// Panics if `body` does not follow the rules about variables of the module documentation.
-    pub fn new(name: String, body: Vec<Statement>, variable_count: usize) -> Self {
-        check_variables(&body, variable_count);
+    pub fn new(name: String, body: Vec<Statement>, variable_names: Vec<String>) -> Self {
+        check_variables(&body, variable_names.len());
         Function {
             name,
             body,
-            variable_count,
+            variable_names,
         }
     }
 
@@ -76,14 +76,20 @@ impl Function {
         &self.body
     }
 
-    /// The number of variables of the function. Their ids are `0..variable_count`.
-    pub fn variable_count(&self) -> usize {
-        self.variable_count
+    /// The name of each variable of the function, indexed by its [`VariableId`].
+    /// Several variables can have the same name.
+    pub fn variable_names(&self) -> &[String] {
+        &self.variable_names
     }
 
-    /// Returns the name, the body and the number of variables of the function.
-    pub fn into_parts(self) -> (String, Vec<Statement>, usize) {
-        (self.name, self.body, self.variable_count)
+    /// The number of variables of the function. Their ids are `0..variable_count`.
+    pub fn variable_count(&self) -> usize {
+        self.variable_names.len()
+    }
+
+    /// Returns the name, the body and the names of the variables of the function.
+    pub fn into_parts(self) -> (String, Vec<Statement>, Vec<String>) {
+        (self.name, self.body, self.variable_names)
     }
 }
 
@@ -156,7 +162,7 @@ fn check_variables_read(expression: &Expression, is_set: &[bool]) {
     }
 }
 
-const VARIABLE_ID_IN_RANGE: &str = "variable id should be smaller than `variable_count`";
+const VARIABLE_ID_IN_RANGE: &str = "variable id should have a name in `variable_names`";
 
 #[cfg(test)]
 mod tests {
@@ -164,7 +170,8 @@ mod tests {
 
     /// A function named `main` with the body `body` and `variable_count` variables.
     fn function(body: Vec<Statement>, variable_count: usize) -> Function {
-        Function::new("main".to_string(), body, variable_count)
+        let variable_names = (0..variable_count).map(|i| format!("v{i}")).collect();
+        Function::new("main".to_string(), body, variable_names)
     }
 
     /// A statement that sets `variable` to the integer `value`.
@@ -195,13 +202,13 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "variable id should be smaller than `variable_count`")]
+    #[should_panic(expected = "variable id should have a name in `variable_names`")]
     fn let_of_a_variable_out_of_range_panics() {
         function(vec![let_integer(1, 1)], 1);
     }
 
     #[test]
-    #[should_panic(expected = "variable id should be smaller than `variable_count`")]
+    #[should_panic(expected = "variable id should have a name in `variable_names`")]
     fn read_of_a_variable_out_of_range_panics() {
         function(vec![let_integer(0, 1), print_variable(1)], 1);
     }
@@ -251,6 +258,14 @@ mod tests {
                 let_integer(0, 1),
             ],
             1,
+        );
+    }
+
+    #[test]
+    fn variable_count_is_the_number_of_variable_names() {
+        assert_eq!(
+            function(vec![let_integer(0, 1), let_integer(1, 2)], 2).variable_count(),
+            2
         );
     }
 }

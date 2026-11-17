@@ -38,9 +38,9 @@ pub fn check(program: resolved_ast::Program) -> Result<typed_ast::Program, TypeE
 }
 
 fn check_function(function: resolved_ast::Function) -> Result<typed_ast::Function, TypeError> {
-    let (name, body, variable_count) = function.into_parts();
+    let (name, body, variable_names) = function.into_parts();
     // The type of each variable, indexed by its id. `None` until its `let` is checked.
-    let mut variable_types = vec![None; variable_count];
+    let mut variable_types = vec![None; variable_names.len()];
     let body = body
         .into_iter()
         .map(|statement| check_statement(statement, &mut variable_types))
@@ -130,7 +130,8 @@ mod tests {
         body: Vec<resolved_ast::Statement>,
         variable_count: usize,
     ) -> Result<typed_ast::Program, TypeError> {
-        let main = resolved_ast::Function::new("main".to_string(), body, variable_count);
+        let variable_names = (0..variable_count).map(|i| format!("v{i}")).collect();
+        let main = resolved_ast::Function::new("main".to_string(), body, variable_names);
         check(resolved_ast::Program::new(vec![main], FunctionId(0)))
     }
 
@@ -206,8 +207,8 @@ mod tests {
 
     #[test]
     fn main_stays_the_same() {
-        let functions =
-            ["helper", "main"].map(|name| resolved_ast::Function::new(name.to_string(), vec![], 0));
+        let functions = ["helper", "main"]
+            .map(|name| resolved_ast::Function::new(name.to_string(), vec![], vec![]));
         let program = check(resolved_ast::Program::new(functions.into(), FunctionId(1)))
             .expect("the program should have no type error");
         assert_eq!(program.main(), FunctionId(1));
