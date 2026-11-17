@@ -2,7 +2,7 @@
 //! and returns the typed AST.
 //!
 //! The type of a variable is the type of the value of its `let`.
-//! `print` only accepts an `Int`.
+//! `print` only accepts an `Int`, and `delete` only accepts a `SimDevice`.
 
 use std::fmt;
 
@@ -69,6 +69,16 @@ fn check_statement(
                 Type::Int => Ok(typed_ast::Statement::Print(value)),
                 Type::SimDevice => Err(TypeError::Mismatch {
                     expected: Type::Int,
+                    found: value_type,
+                }),
+            }
+        }
+        resolved_ast::Statement::Delete(value) => {
+            let (value, value_type) = check_expression(value, variable_types);
+            match value_type {
+                Type::SimDevice => Ok(typed_ast::Statement::Delete(value)),
+                Type::Int => Err(TypeError::Mismatch {
+                    expected: Type::SimDevice,
                     found: value_type,
                 }),
             }
@@ -165,6 +175,11 @@ mod tests {
         }
     }
 
+    /// A resolved statement that deletes `variable`.
+    fn delete_variable(variable: usize) -> resolved_ast::Statement {
+        resolved_ast::Statement::Delete(resolved_ast::Expression::Variable(VariableId(variable)))
+    }
+
     /// A resolved statement that prints `variable`.
     fn print_variable(variable: usize) -> resolved_ast::Statement {
         resolved_ast::Statement::Print(resolved_ast::Expression::Variable(VariableId(variable)))
@@ -228,6 +243,22 @@ mod tests {
             TypeError::Mismatch {
                 expected: Type::Int,
                 found: Type::SimDevice,
+            }
+        );
+    }
+
+    #[test]
+    fn delete_of_a_sim_device_is_accepted() {
+        check_main(vec![let_sim_device(0), delete_variable(0)], 1);
+    }
+
+    #[test]
+    fn delete_of_an_int_is_an_error() {
+        assert_eq!(
+            check_main_error(vec![let_integer(0, 1), delete_variable(0)], 1),
+            TypeError::Mismatch {
+                expected: Type::SimDevice,
+                found: Type::Int,
             }
         );
     }

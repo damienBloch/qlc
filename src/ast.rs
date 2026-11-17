@@ -17,6 +17,8 @@ pub struct Function {
 pub enum Statement {
     /// Prints the value of an expression on its own line.
     Print(Expression),
+    /// Deletes the device that is the value of an expression.
+    Delete(Expression),
     /// Defines a variable named `name` and sets it to the value of `value`.
     Let { name: String, value: Expression },
 }

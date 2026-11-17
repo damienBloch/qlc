@@ -25,6 +25,12 @@ fn call(function: &Function, output: &mut impl Write) {
                     panic!("the type checker should ensure that `print` gets an `Int`")
                 }
             },
+            Statement::Delete(expression) => match evaluate(expression, &variables) {
+                Value::SimDevice => {}
+                Value::Int(_) => {
+                    panic!("the type checker should ensure that `delete` gets a `SimDevice`")
+                }
+            },
             Statement::Let { variable, value } => {
                 let value = evaluate(value, &variables);
                 *variables.get_mut(variable.0).expect(VARIABLE_ID_IN_RANGE) = Some(value);
@@ -172,5 +178,14 @@ mod tests {
     fn new_sim_device_can_be_stored_in_a_variable() {
         let body = vec![let_statement(0, Expression::NewSimDevice), print(1)];
         assert_eq!(run_to_string(&main_with_body_and_variables(body, 1)), "1\n");
+    }
+
+    #[test]
+    fn delete_of_a_sim_device_prints_nothing() {
+        let body = vec![
+            let_statement(0, Expression::NewSimDevice),
+            Statement::Delete(Expression::Variable(VariableId(0))),
+        ];
+        assert_eq!(run_to_string(&main_with_body_and_variables(body, 1)), "");
     }
 }

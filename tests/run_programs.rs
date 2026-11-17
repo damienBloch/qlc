@@ -86,6 +86,14 @@ fn print_of_a_sim_device() {
 }
 
 #[test]
+fn delete_of_an_integer() {
+    assert_error(
+        &run_program("delete_integer.ql"),
+        "expected a value of type `SimDevice`, found `Int`",
+    );
+}
+
+#[test]
 fn integer_too_large() {
     assert_error(
         &run_program("integer_too_large.ql"),

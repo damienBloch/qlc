@@ -91,6 +91,8 @@ impl Function {
 pub enum Statement {
     /// Prints the value of an expression on its own line.
     Print(Expression),
+    /// Deletes the device that is the value of an expression.
+    Delete(Expression),
     /// Sets `variable` to the value of `value`.
     Let {
         variable: VariableId,
@@ -122,7 +124,9 @@ fn check_variables(body: &[Statement], variable_count: usize) {
     let mut is_set = vec![false; variable_count];
     for statement in body {
         match statement {
-            Statement::Print(value) => check_variables_read(value, &is_set),
+            Statement::Print(value) | Statement::Delete(value) => {
+                check_variables_read(value, &is_set)
+            }
             Statement::Let { variable, value } => {
                 check_variables_read(value, &is_set);
                 let variable_is_set = is_set.get_mut(variable.0).expect(VARIABLE_ID_IN_RANGE);
@@ -236,5 +240,17 @@ mod tests {
     #[should_panic(expected = "a function id should refer to a function of the program")]
     fn function_with_an_invalid_id_panics() {
         Program::new(vec![function(vec![], 0)], FunctionId(0)).function(FunctionId(1));
+    }
+
+    #[test]
+    #[should_panic(expected = "a variable should be set before it is read")]
+    fn delete_of_a_variable_before_its_let_panics() {
+        function(
+            vec![
+                Statement::Delete(Expression::Variable(VariableId(0))),
+                let_integer(0, 1),
+            ],
+            1,
+        );
     }
 }

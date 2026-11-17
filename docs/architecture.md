@@ -51,7 +51,8 @@ There are two types:
 - `Int`, a 64-bit signed integer, of kind `Data`;
 - `SimDevice`, a simulated device, of kind `Resource`.
 
-The type checker checks that `print` gets an `Int`. Otherwise it reports a `TypeError::Mismatch`.
+The type checker checks that `print` gets an `Int` and `delete` gets a `SimDevice`.
+Otherwise it reports a `TypeError::Mismatch`.
 The rules of the `Resource` kind are not checked yet.
 
 The interpreter also takes an output writer (`&mut impl Write`).
@@ -111,8 +112,9 @@ A function body is a list of statements:
 program    = function*
 function   = "fn" identifier "(" ")" block
 block      = "{" statement* "}"
-statement  = print | let
+statement  = print | delete | let
 print      = "print" "(" expression ")" ";"
+delete     = "delete" "(" expression ")" ";"
 let        = "let" identifier "=" expression ";"
 expression = integer | identifier | sim_device
 sim_device = "sim_device" "(" ")"
@@ -120,7 +122,7 @@ sim_device = "sim_device" "(" ")"
 
 An integer is a sequence of ASCII digits whose value fits in an `i64`.
 An expression is an integer literal, the name of a variable, or `sim_device()`.
-`sim_device()` creates a simulated device. A device has no operations yet.
+`sim_device()` creates a simulated device. `delete` deletes it.
 `print` writes the value of the expression on its own line on stdout.
 
 `let x = <expression>;` defines a variable `x` with the value of the expression.

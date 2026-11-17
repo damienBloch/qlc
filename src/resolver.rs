@@ -79,6 +79,9 @@ fn resolve_statement(
         ast::Statement::Print(value) => Ok(resolved_ast::Statement::Print(resolve_expression(
             value, variables,
         )?)),
+        ast::Statement::Delete(value) => Ok(resolved_ast::Statement::Delete(resolve_expression(
+            value, variables,
+        )?)),
         ast::Statement::Let { name, value } => {
             // The value is resolved before the variable is defined,
             // so in `let x = x;` the value refers to the previous `x`.
@@ -382,6 +385,23 @@ mod tests {
         assert_eq!(
             resolve(program).err(),
             Some(ResolveError::UnknownVariable("x".to_string()))
+        );
+    }
+
+    #[test]
+    fn variable_in_delete_is_resolved() {
+        assert_main_body_resolves_to(
+            vec![
+                ast_let("d", ast::Expression::NewSimDevice),
+                ast::Statement::Delete(ast::Expression::Variable("d".to_string())),
+            ],
+            vec![
+                resolved_ast::Statement::Let {
+                    variable: VariableId(0),
+                    value: resolved_ast::Expression::NewSimDevice,
+                },
+                resolved_ast::Statement::Delete(resolved_ast::Expression::Variable(VariableId(0))),
+            ],
         );
     }
 }

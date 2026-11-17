@@ -6,8 +6,9 @@
 //! program    = function*
 //! function   = "fn" identifier "(" ")" block
 //! block      = "{" statement* "}"
-//! statement  = print | let
+//! statement  = print | delete | let
 //! print      = "print" "(" expression ")" ";"
+//! delete     = "delete" "(" expression ")" ";"
 //! let        = "let" identifier "=" expression ";"
 //! expression = integer | identifier | sim_device
 //! sim_device = "sim_device" "(" ")"
@@ -82,6 +83,7 @@ impl<'a> Parser<'a> {
     fn parse_statement(&mut self) -> Result<Statement, ParseError> {
         match self.peek() {
             Some(Token::Print) => self.parse_print(),
+            Some(Token::Delete) => self.parse_delete(),
             Some(Token::Let) => self.parse_let(),
             found => Err(unexpected("statement", found)),
         }
@@ -94,6 +96,15 @@ impl<'a> Parser<'a> {
         self.expect(&Token::CloseParen)?;
         self.expect(&Token::Semicolon)?;
         Ok(Statement::Print(value))
+    }
+
+    fn parse_delete(&mut self) -> Result<Statement, ParseError> {
+        self.expect(&Token::Delete)?;
+        self.expect(&Token::OpenParen)?;
+        let value = self.parse_expression()?;
+        self.expect(&Token::CloseParen)?;
+        self.expect(&Token::Semicolon)?;
+        Ok(Statement::Delete(value))
     }
 
     fn parse_let(&mut self) -> Result<Statement, ParseError> {
@@ -316,6 +327,25 @@ mod tests {
             Err(ParseError::UnexpectedToken {
                 expected: "`(`".to_string(),
                 found: Token::Semicolon,
+            })
+        );
+    }
+
+    #[test]
+    fn delete_statement() {
+        assert_eq!(
+            parse_body("fn main() { delete(d); }"),
+            Ok(vec![Statement::Delete(variable("d"))])
+        );
+    }
+
+    #[test]
+    fn delete_without_semicolon() {
+        assert_eq!(
+            parse_source("fn main() { delete(d) }"),
+            Err(ParseError::UnexpectedToken {
+                expected: "`;`".to_string(),
+                found: Token::CloseBrace,
             })
         );
     }
