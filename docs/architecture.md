@@ -4,7 +4,8 @@ qlc reads one source file and executes it on the host.
 The work is split in stages.
 Each stage takes the output of the previous stage as input and produces a new representation.
 
-This document describes what exists today. `design.md` describes the language and compiler that qlc aims for.
+This document describes what exists today. `specification.md` specifies the language as it is today.
+`design.md` describes the language and compiler that qlc aims for.
 
 ## Stages
 
@@ -118,35 +119,7 @@ All the language logic is in the library (`src/lib.rs` and the stage modules).
 
 ## Language
 
-The language currently supports functions without parameters.
-A function body is a list of statements:
-
-```text
-program    = function*
-function   = "fn" identifier "(" ")" block
-block      = "{" statement* "}"
-statement  = print | delete | let
-print      = "print" "(" expression ")" ";"
-delete     = "delete" "(" expression ")" ";"
-let        = "let" identifier "=" expression ";"
-expression = integer | identifier | sim_device
-sim_device = "sim_device" "(" ")"
-```
-
-An integer is a sequence of ASCII digits whose value fits in an `i64`.
-An expression is an integer literal, the name of a variable, or `sim_device()`.
-`sim_device()` creates a simulated device. `delete` deletes it.
-`print` writes the value of the expression on its own line on stdout.
-
-`let x = <expression>;` defines a variable `x` with the value of the expression.
-A variable can be used after its `let`, until the end of the function.
-A `let` can reuse the name of a variable. It then defines a new variable,
-and the name refers to the new variable after this `let`.
-In `let x = x;`, the value refers to the previous `x`.
-
-A program must contain exactly one function named `main`.
-Function names must be unique.
-Running a program calls `main`.
+The syntax and the meaning of the language are in `specification.md`.
 
 ## Tests
 
