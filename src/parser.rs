@@ -48,7 +48,7 @@ struct Parser<'a> {
     position: usize,
 }
 
-impl Parser<'_> {
+impl<'a> Parser<'a> {
     fn parse_program(&mut self) -> Result<Program, ParseError> {
         let mut functions = Vec::new();
         while self.position < self.tokens.len() {
@@ -78,16 +78,9 @@ impl Parser<'_> {
     }
 
     fn parse_statement(&mut self) -> Result<Statement, ParseError> {
-        let expected = "statement";
         match self.peek() {
             Some(Token::Print) => self.parse_print(),
-            Some(found) => Err(ParseError::UnexpectedToken {
-                expected: expected.to_string(),
-                found: found.clone(),
-            }),
-            None => Err(ParseError::UnexpectedEndOfInput {
-                expected: expected.to_string(),
-            }),
+            found => Err(unexpected("statement", found)),
         }
     }
 
@@ -101,56 +94,52 @@ impl Parser<'_> {
     }
 
     fn parse_expression(&mut self) -> Result<Expression, ParseError> {
-        let expected = "expression";
-        match self.next_token(expected)? {
-            Token::Integer(value) => Ok(Expression::Integer(*value)),
-            found => Err(ParseError::UnexpectedToken {
-                expected: expected.to_string(),
-                found: found.clone(),
-            }),
+        match self.next_token() {
+            Some(Token::Integer(value)) => Ok(Expression::Integer(*value)),
+            found => Err(unexpected("expression", found)),
         }
     }
 
     /// Consumes the next token if it is equal to `expected`. Returns an error otherwise.
     fn expect(&mut self, expected: &Token) -> Result<(), ParseError> {
-        let found = self.next_token(&expected.to_string())?;
-        if found == expected {
-            Ok(())
-        } else {
-            Err(ParseError::UnexpectedToken {
-                expected: expected.to_string(),
-                found: found.clone(),
-            })
+        match self.next_token() {
+            Some(found) if found == expected => Ok(()),
+            found => Err(unexpected(&expected.to_string(), found)),
         }
     }
 
     /// Consumes the next token if it is an identifier and returns its name.
     fn expect_identifier(&mut self) -> Result<String, ParseError> {
-        let expected = "identifier";
-        match self.next_token(expected)? {
-            Token::Identifier(name) => Ok(name.clone()),
-            found => Err(ParseError::UnexpectedToken {
-                expected: expected.to_string(),
-                found: found.clone(),
-            }),
+        match self.next_token() {
+            Some(Token::Identifier(name)) => Ok(name.clone()),
+            found => Err(unexpected("identifier", found)),
         }
     }
 
     /// Returns the next token without consuming it, or `None` at the end of the input.
-    fn peek(&self) -> Option<&Token> {
+    fn peek(&self) -> Option<&'a Token> {
         self.tokens.get(self.position)
     }
 
-    /// Consumes and returns the next token. `expected` is only used for the error message.
-    fn next_token(&mut self, expected: &str) -> Result<&Token, ParseError> {
-        let token =
-            self.tokens
-                .get(self.position)
-                .ok_or_else(|| ParseError::UnexpectedEndOfInput {
-                    expected: expected.to_string(),
-                })?;
+    /// Consumes and returns the next token, or returns `None` at the end of the input.
+    fn next_token(&mut self) -> Option<&'a Token> {
+        let token = self.tokens.get(self.position)?;
         self.position += 1;
-        Ok(token)
+        Some(token)
+    }
+}
+
+/// The error for finding `found` where `expected` was expected.
+/// `found` is `None` at the end of the input.
+fn unexpected(expected: &str, found: Option<&Token>) -> ParseError {
+    match found {
+        Some(token) => ParseError::UnexpectedToken {
+            expected: expected.to_string(),
+            found: token.clone(),
+        },
+        None => ParseError::UnexpectedEndOfInput {
+            expected: expected.to_string(),
+        },
     }
 }
 
