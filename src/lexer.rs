@@ -11,6 +11,8 @@ pub enum Token {
     Print,
     /// The `let` keyword.
     Let,
+    /// The `sim_device` keyword.
+    SimDevice,
     Identifier(String),
     /// A non-negative integer literal, such as `42`.
     /// Negative numbers will be written with a unary minus, which is not supported yet.
@@ -29,6 +31,7 @@ impl fmt::Display for Token {
             Token::Fn => write!(f, "`fn`"),
             Token::Print => write!(f, "`print`"),
             Token::Let => write!(f, "`let`"),
+            Token::SimDevice => write!(f, "`sim_device`"),
             Token::Identifier(name) => write!(f, "identifier `{name}`"),
             Token::Integer(value) => write!(f, "integer `{value}`"),
             Token::OpenParen => write!(f, "`(`"),
@@ -117,6 +120,7 @@ fn keyword_or_identifier(word: String) -> Token {
         "fn" => Token::Fn,
         "print" => Token::Print,
         "let" => Token::Let,
+        "sim_device" => Token::SimDevice,
         _ => Token::Identifier(word),
     }
 }
@@ -186,6 +190,11 @@ mod tests {
                 Token::Semicolon,
             ])
         );
+    }
+
+    #[test]
+    fn sim_device_keyword() {
+        assert_eq!(tokenize("sim_device"), Ok(vec![Token::SimDevice]));
     }
 
     #[test]

@@ -21,6 +21,9 @@ fn call(function: &Function, output: &mut impl Write) {
                 Value::Int(value) => {
                     writeln!(output, "{value}").expect("writing the program output should succeed")
                 }
+                Value::SimDevice => {
+                    panic!("the type checker should ensure that `print` gets an `Int`")
+                }
             },
             Statement::Let { variable, value } => {
                 let value = evaluate(value, &variables);
@@ -35,6 +38,7 @@ fn call(function: &Function, output: &mut impl Write) {
 fn evaluate(expression: &Expression, variables: &[Option<Value>]) -> Value {
     match expression {
         Expression::Integer(value) => Value::Int(*value),
+        Expression::NewSimDevice => Value::SimDevice,
         Expression::Variable(variable) => variables
             .get(variable.0)
             .expect(VARIABLE_ID_IN_RANGE)
@@ -46,6 +50,8 @@ fn evaluate(expression: &Expression, variables: &[Option<Value>]) -> Value {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Value {
     Int(i64),
+    /// A simulated device.
+    SimDevice,
 }
 
 const VARIABLE_ID_IN_RANGE: &str = "`typed_ast::Function::new` checks variable ids";
@@ -160,5 +166,11 @@ mod tests {
             run_to_string(&main_with_body_and_variables(body, 2)),
             "1\n1\n"
         );
+    }
+
+    #[test]
+    fn new_sim_device_can_be_stored_in_a_variable() {
+        let body = vec![let_statement(0, Expression::NewSimDevice), print(1)];
+        assert_eq!(run_to_string(&main_with_body_and_variables(body, 1)), "1\n");
     }
 }

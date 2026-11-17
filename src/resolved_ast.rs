@@ -104,6 +104,8 @@ pub enum Expression {
     Integer(i64),
     /// The value of a variable.
     Variable(VariableId),
+    /// Creates a simulated device.
+    NewSimDevice,
 }
 
 /// The index of a function in the functions of a program.
@@ -142,7 +144,7 @@ fn check_variables(body: &[Statement], variable_count: usize) {
 /// `is_set` tells, for each variable, whether it is set.
 fn check_variables_read(expression: &Expression, is_set: &[bool]) {
     match expression {
-        Expression::Integer(_) => {}
+        Expression::Integer(_) | Expression::NewSimDevice => {}
         Expression::Variable(variable) => assert!(
             *is_set.get(variable.0).expect(VARIABLE_ID_IN_RANGE),
             "a variable should be set before it is read"

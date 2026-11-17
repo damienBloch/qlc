@@ -9,7 +9,8 @@
 //! statement  = print | let
 //! print      = "print" "(" expression ")" ";"
 //! let        = "let" identifier "=" expression ";"
-//! expression = integer | identifier
+//! expression = integer | identifier | sim_device
+//! sim_device = "sim_device" "(" ")"
 //! ```
 
 use std::fmt;
@@ -108,6 +109,11 @@ impl<'a> Parser<'a> {
         match self.next_token() {
             Some(Token::Integer(value)) => Ok(Expression::Integer(*value)),
             Some(Token::Identifier(name)) => Ok(Expression::Variable(name.clone())),
+            Some(Token::SimDevice) => {
+                self.expect(&Token::OpenParen)?;
+                self.expect(&Token::CloseParen)?;
+                Ok(Expression::NewSimDevice)
+            }
             found => Err(unexpected("expression", found)),
         }
     }
@@ -292,6 +298,25 @@ mod tests {
         assert_eq!(
             parse_body("fn main() { print(x); }"),
             Ok(vec![Statement::Print(variable("x"))])
+        );
+    }
+
+    #[test]
+    fn let_statement_with_sim_device() {
+        assert_eq!(
+            parse_body("fn main() { let d = sim_device(); }"),
+            Ok(vec![let_statement("d", Expression::NewSimDevice)])
+        );
+    }
+
+    #[test]
+    fn sim_device_without_parentheses() {
+        assert_eq!(
+            parse_source("fn main() { let d = sim_device; }"),
+            Err(ParseError::UnexpectedToken {
+                expected: "`(`".to_string(),
+                found: Token::Semicolon,
+            })
         );
     }
 

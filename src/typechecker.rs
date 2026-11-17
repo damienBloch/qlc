@@ -2,7 +2,7 @@
 //! and returns the typed AST.
 //!
 //! The type of a variable is the type of the value of its `let`.
-//! Today `Int` is the only type, so no type error can occur.
+//! `print` only accepts an `Int`.
 
 use std::fmt;
 
@@ -10,13 +10,20 @@ use crate::resolved_ast;
 use crate::typed_ast;
 use crate::types::Type;
 
-/// An error in the types of a program. It has no variants yet, because no type error can occur.
+/// An error in the types of a program.
 #[derive(Debug, PartialEq, Eq)]
-pub enum TypeError {}
+pub enum TypeError {
+    /// A value of type `found` is used where a value of type `expected` is needed.
+    Mismatch { expected: Type, found: Type },
+}
 
 impl fmt::Display for TypeError {
-    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {}
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TypeError::Mismatch { expected, found } => {
+                write!(f, "expected a value of type `{expected}`, found `{found}`")
+            }
+        }
     }
 }
 
@@ -60,6 +67,10 @@ fn check_statement(
             let (value, value_type) = check_expression(value, variable_types);
             match value_type {
                 Type::Int => Ok(typed_ast::Statement::Print(value)),
+                Type::SimDevice => Err(TypeError::Mismatch {
+                    expected: Type::Int,
+                    found: value_type,
+                }),
             }
         }
         resolved_ast::Statement::Let { variable, value } => {
@@ -83,6 +94,9 @@ fn check_expression(
         resolved_ast::Expression::Integer(value) => {
             (typed_ast::Expression::Integer(value), Type::Int)
         }
+        resolved_ast::Expression::NewSimDevice => {
+            (typed_ast::Expression::NewSimDevice, Type::SimDevice)
+        }
         resolved_ast::Expression::Variable(variable) => (
             typed_ast::Expression::Variable(variable),
             variable_types
@@ -102,10 +116,24 @@ mod tests {
 
     /// Checks a program whose only function is `main`, with the body `body`
     /// and `variable_count` variables.
-    fn check_main(body: Vec<resolved_ast::Statement>, variable_count: usize) -> typed_ast::Program {
+    fn check_main_result(
+        body: Vec<resolved_ast::Statement>,
+        variable_count: usize,
+    ) -> Result<typed_ast::Program, TypeError> {
         let main = resolved_ast::Function::new("main".to_string(), body, variable_count);
         check(resolved_ast::Program::new(vec![main], FunctionId(0)))
-            .expect("the program should have no type error")
+    }
+
+    /// Like [`check_main_result`], for a program that has no type error.
+    fn check_main(body: Vec<resolved_ast::Statement>, variable_count: usize) -> typed_ast::Program {
+        check_main_result(body, variable_count).expect("the program should have no type error")
+    }
+
+    /// Like [`check_main_result`], for a program that has a type error. Returns the error.
+    fn check_main_error(body: Vec<resolved_ast::Statement>, variable_count: usize) -> TypeError {
+        check_main_result(body, variable_count)
+            .err()
+            .expect("the program should have a type error")
     }
 
     /// The types of the variables of the `main` function of `program`.
@@ -126,6 +154,14 @@ mod tests {
         resolved_ast::Statement::Let {
             variable: VariableId(variable),
             value: resolved_ast::Expression::Variable(VariableId(source)),
+        }
+    }
+
+    /// A resolved statement that sets `variable` to a new simulated device.
+    fn let_sim_device(variable: usize) -> resolved_ast::Statement {
+        resolved_ast::Statement::Let {
+            variable: VariableId(variable),
+            value: resolved_ast::Expression::NewSimDevice,
         }
     }
 
@@ -172,5 +208,27 @@ mod tests {
     fn variable_set_to_a_variable_has_its_type() {
         let program = check_main(vec![let_integer(0, 1), let_variable(1, 0)], 2);
         assert_eq!(main_variable_types(&program), [Type::Int, Type::Int]);
+    }
+
+    #[test]
+    fn variable_set_to_a_new_sim_device_is_a_sim_device() {
+        let program = check_main(vec![let_sim_device(0)], 1);
+        assert_eq!(main_variable_types(&program), [Type::SimDevice]);
+    }
+
+    #[test]
+    fn print_of_an_int_is_accepted() {
+        check_main(vec![let_integer(0, 1), print_variable(0)], 1);
+    }
+
+    #[test]
+    fn print_of_a_sim_device_is_an_error() {
+        assert_eq!(
+            check_main_error(vec![let_sim_device(0), print_variable(0)], 1),
+            TypeError::Mismatch {
+                expected: Type::Int,
+                found: Type::SimDevice,
+            }
+        );
     }
 }

@@ -27,4 +27,6 @@ pub enum Expression {
     Integer(i64),
     /// The value of the variable named by the identifier.
     Variable(String),
+    /// Creates a simulated device.
+    NewSimDevice,
 }

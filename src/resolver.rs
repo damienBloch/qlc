@@ -96,6 +96,7 @@ fn resolve_expression(
 ) -> Result<resolved_ast::Expression, ResolveError> {
     match expression {
         ast::Expression::Integer(value) => Ok(resolved_ast::Expression::Integer(value)),
+        ast::Expression::NewSimDevice => Ok(resolved_ast::Expression::NewSimDevice),
         ast::Expression::Variable(name) => match variables.lookup(&name) {
             Some(variable) => Ok(resolved_ast::Expression::Variable(variable)),
             None => Err(ResolveError::UnknownVariable(name)),

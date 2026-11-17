@@ -73,6 +73,19 @@ fn unknown_variable() {
 }
 
 #[test]
+fn sim_device_in_a_variable() {
+    assert_success(&run_program("sim_device.ql"), "1\n");
+}
+
+#[test]
+fn print_of_a_sim_device() {
+    assert_error(
+        &run_program("print_sim_device.ql"),
+        "expected a value of type `Int`, found `SimDevice`",
+    );
+}
+
+#[test]
 fn integer_too_large() {
     assert_error(
         &run_program("integer_too_large.ql"),

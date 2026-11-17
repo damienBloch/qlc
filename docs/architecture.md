@@ -46,7 +46,13 @@ The types are in `src/types.rs`. Each type has a kind:
 - `Data`: a value that can be copied and dropped.
 - `Resource`: a value that must be used exactly once. It cannot be copied or dropped.
 
-Today `Int` is the only type, and its kind is `Data`. So no type error can occur yet.
+There are two types:
+
+- `Int`, a 64-bit signed integer, of kind `Data`;
+- `SimDevice`, a simulated device, of kind `Resource`.
+
+The type checker checks that `print` gets an `Int`. Otherwise it reports a `TypeError::Mismatch`.
+The rules of the `Resource` kind are not checked yet.
 
 The interpreter also takes an output writer (`&mut impl Write`).
 `print` writes to it.
@@ -67,7 +73,6 @@ So the algorithm of a stage can be changed without changing the other stages.
 ## Errors
 
 Each stage that can fail has its own error type: `LexError`, `ParseError`, `ResolveError` and `TypeError`.
-`TypeError` has no variants yet.
 `src/lib.rs` wraps them in one `Error` type.
 
 There are two kinds of problems:
@@ -109,11 +114,13 @@ block      = "{" statement* "}"
 statement  = print | let
 print      = "print" "(" expression ")" ";"
 let        = "let" identifier "=" expression ";"
-expression = integer | identifier
+expression = integer | identifier | sim_device
+sim_device = "sim_device" "(" ")"
 ```
 
 An integer is a sequence of ASCII digits whose value fits in an `i64`.
-An expression is an integer literal or the name of a variable.
+An expression is an integer literal, the name of a variable, or `sim_device()`.
+`sim_device()` creates a simulated device. A device has no operations yet.
 `print` writes the value of the expression on its own line on stdout.
 
 `let x = <expression>;` defines a variable `x` with the value of the expression.
