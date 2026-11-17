@@ -21,6 +21,7 @@ functions to make tests more readable and avoid repeating boilerplate code.
 - In the code, use "expect" with a reason for behavior that should not occur. Use "todo" for what is not decided yet.  
   It is crucial to panic rather than to silently ignore an unexpected situation, even if someone latter uses the function in a way that is not expected.
 - Documentation should describe what the code does, not how.
+- Items in a file should be sorted in logical, with public and most important items first, and then in breadth-first descending order. 
 
 # Compiler guidelines
 
