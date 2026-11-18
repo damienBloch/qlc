@@ -141,6 +141,7 @@ The host runs the loop and adds three segments to the program of `dds0`:
 
 This section is not decided. A first version of `on` blocks was implemented and then removed,
 because it was not clear how they should work.
+The section [Choreographies](#choreographies) describes another way to place code on devices.
 
 `on <device> { ... }` says that the code of the block runs on a device.
 Its statements are placed at the current time.
@@ -169,19 +170,175 @@ call:         param 0 = 42
 A target that cannot handle parameters can wait for the values and generate its program at the call.
 The interface between the host and the targets allows both.
 
+## Choreographies
+
+A **choreography** is a function that describes what several devices do together, in one body.
+It is declared with `prog`. The compiler splits it into one program per device.
+This step is called **endpoint projection**.
+
+```text
+prog my_prog(on t1: Thread, on t2: Thread) {
+    let x@t1 = 42;
+    let val = send(t1, t2, x);
+    print(val);
+}
+```
+
+Thread `t1` sends 42 to thread `t2`, and `t2` prints it.
+
+At first, the devices are threads on the host. Later they are real devices, with timed outputs.
+
+### Locations
+
+- A **location** is a device that takes part in a choreography.
+- The location parameters of a `prog` are written with `on`, for example `on t1: Thread`.
+- The type of a location is a device type. At first, `Thread` is the only one.
+  Later, a location can have any type that implements a `Device` trait.
+- Inside a `prog`, a location is a name known at compile time. It is not a runtime value.
+  The compiler needs the locations to project the choreography.
+- On the host, a device is a handle of kind Resource. The host uses it to communicate with the device.
+
+### Located values
+
+- Each variable has a type and a location. For example, `x: Int@t1` is an `Int` available on `t1`.
+- A `let` can give the location of its variable: `let x@t1 = 42;`.
+  Otherwise, the location comes from the expression, for example the result of `send`.
+- A value can only be used on its location.
+  Using a value on another location is a type error.
+- At first, each value has one location.
+  Later, a value can be available on several locations: `x@(t1, t2)`.
+
+### Calls inside a `prog`
+
+- A function called inside a `prog` must itself be a `prog`.
+  Its location parameters are set to locations of the caller.
+- A `fn` is a `prog` whose only location is the host.
+  The host location is not written, so a `fn` is called like a usual function.
+  It runs on the host, and cannot be called on another location.
+- The builtins are `prog`s too:
+
+  | Builtin | Signature |
+  |---|---|
+  | `send` | `prog send(on from: Thread, on to: Thread, x: Int@from) -> Int@to` |
+  | `print` | `prog print(on d: Thread, x: Int@d)` |
+
+- `print(val)` runs on the location of `val`. The location argument is not written.
+- At first, only `Int` values can be sent. Resources cannot be sent.
+
+### Projection
+
+Projection gives each location the statements that it runs.
+A `send` gives a send on one side and a receive on the other side.
+
+```text
+t1:  let x = 42;  send(t2, x);
+t2:  let val = recv(t1);  print(val);
+```
+
+The program of each location only uses its own values.
+Each send in one program has a matching receive in the other program.
+So a choreography that type checks cannot deadlock and cannot read a value that is not on its location.
+This follows the rule that a function that type checks does not fail when it is called.
+
+### Compilation
+
+```mermaid
+flowchart LR
+    typed["Typed AST<br/>(choreographies)"]
+    projection["Endpoint projection"]
+    local["One program per location"]
+    intrinsics["Intrinsics IR"]
+    interpreter["Interpreter<br/>(threads)"]
+    outlining["Device outlining<br/>(real devices)"]
+
+    typed --> projection --> local --> intrinsics
+    intrinsics --> interpreter
+    intrinsics --> outlining
+```
+
+- Projection is the partitioning pass of [Compiler stages](#compiler-stages), for choreographies.
+- The programs of the locations are lowered to an **intrinsics IR**.
+  It has a small set of operations, such as `let`, `print`, `send` and `recv`.
+- The interpreter runs the intrinsics IR for threads.
+  A device outlining stage extracts the code of real devices and gives it to their targets.
+
+### Running a choreography from the host
+
+The host gets one part per location, starts each part on a thread, and waits for the threads to end:
+
+```text
+let p1, p2 = parts(my_prog);
+
+let t1 = thread(p1);
+let t2 = thread(p2);
+
+join(t1);
+join(t2);
+```
+
+The parts and the thread handles are of kind Resource.
+So the linearity checker checks that each part is started once and each thread is joined once.
+This follows the rule that threads end with their block.
+
+This needs function values and tuples, which do not exist yet.
+So the first version does not have it: `main` is a `prog`, and qlc creates one thread for each of its locations.
+
+```text
+prog main(on t1: Thread, on t2: Thread) {
+    let x@t1 = 42;
+    let val = send(t1, t2, x);
+    print(val);
+}
+```
+
+### First steps
+
+Each step is a separate change, with its own tests.
+
+1. **Syntax.** The lexer and the parser accept `prog`, `on` parameters, `@` annotations and `send`.
+2. **Resolver.** Location names are resolved in their own namespace. An unknown location is an error.
+3. **Type checker.** Each variable gets a type and a location. Using a value on another location is an error.
+4. **Projection.** A new stage gives one program per location.
+5. **Execution.** The interpreter runs the program of each location.
+   At first it runs them one after the other on one OS thread, and switches location when one waits for a receive.
+   So the output is always the same, and the integration tests can check it.
+   Real threads can come later.
+6. **Host side.** `parts`, `thread` and `join`.
+
+### Open questions about choreographies
+
+1. **Location of literals.** Can the location of `42` in `send(t1, t2, 42)` be inferred from its use?
+2. **Values on several locations.** Is `x@(t1, t2)` computed on each location, or computed on one and sent to the others?
+3. **Branches.** In an `if` on `t1`, `t2` must know which branch is taken.
+   Does the compiler add the messages, or must the program send them?
+4. **Resources.** Can a resource be sent to another location? Is a device handle a value on a location?
+5. **Values from the host.** How does the host pass values to a `prog`? See [Values from the host](#values-from-the-host).
+6. **Time.** How do choreographies combine with timed statements, `parallel` and `step`?
+7. **Outputs.** How do outputs relate to locations?
+   Is a function that drives an output, such as `pulse` in [Functions](#functions), a `prog` on the device of the output?
+
 ## Functions
 
-Functions do not have to name a device.
+A `fn` is a `prog` with one location: the host.
+The host location is not written, so a `fn` is called without special syntax.
+Code that runs on a device is in a `prog`. See [Choreographies](#choreographies).
 
-- **Computation functions** run where they are called.
-  The compiler compiles them for each target that calls them.
-  If a target cannot run a function, the target reports an error, with the call chain.
+- **Computation functions** that run on devices are `prog`s with one location parameter.
+  The compiler compiles them for each location they are called on.
+  If a device cannot run a function, its target reports an error, with the call chain.
 
   ```text
-  fn scaled(f) { return 2 * f + 1; }
+  prog scaled(on d: Device, f: Int@d) -> Int@d { return 2 * f + 1; }
 
   step(100) { dds0.frequency(scaled(10)); }   // compiled for the DDS
-  print(scaled(10));                           // run on the host
+  ```
+
+  A computation that only runs on the host is a `fn`:
+
+  ```text
+  fn scaled_on_host(f: Int) -> Int { return 2 * f + 1; }
+
+  print(scaled_on_host(10));
   ```
 
 - **Functions that drive outputs** take the outputs as parameters.
