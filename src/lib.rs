@@ -2,8 +2,8 @@
 //!
 //! The work is split in stages. Each stage consumes the output of the previous one:
 //! source text -> [`lexer`] -> tokens -> [`parser`] -> AST -> [`resolver`] -> resolved AST
-//! -> [`typechecker`] -> typed AST -> [`linearity`] check -> [`projection`] -> parts IR
-//! -> [`interpreter`].
+//! -> [`typechecker`] -> typed AST -> [`linearity`] check -> [`places`] check -> [`projection`]
+//! -> parts IR -> [`interpreter`].
 //! See `docs/architecture.md` for details.
 
 pub mod ast;
@@ -12,6 +12,7 @@ pub mod lexer;
 pub mod linearity;
 pub mod parser;
 pub mod parts_ir;
+pub mod places;
 pub mod projection;
 pub mod resolved_ast;
 pub mod resolver;
@@ -30,6 +31,7 @@ pub enum Error {
     Resolve(resolver::ResolveError),
     Type(typechecker::TypeError),
     Linearity(linearity::LinearityError),
+    Place(places::PlaceError),
 }
 
 impl fmt::Display for Error {
@@ -40,6 +42,7 @@ impl fmt::Display for Error {
             Error::Resolve(error) => write!(f, "{error}"),
             Error::Type(error) => write!(f, "{error}"),
             Error::Linearity(error) => write!(f, "{error}"),
+            Error::Place(error) => write!(f, "{error}"),
         }
     }
 }
@@ -51,6 +54,7 @@ pub fn run_source(source: &str, output: &mut impl Write) -> Result<(), Error> {
     let program = resolver::resolve(program).map_err(Error::Resolve)?;
     let program = typechecker::check(program).map_err(Error::Type)?;
     linearity::check(&program).map_err(Error::Linearity)?;
+    places::check(&program).map_err(Error::Place)?;
     let program = projection::project(&program);
     interpreter::run(&program, output);
     Ok(())

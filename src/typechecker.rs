@@ -3,12 +3,10 @@
 //!
 //! The type of a variable is the type of the value of its `let`.
 //! `print` only accepts an `Int`, and `delete` only accepts a `SimDevice`.
-//!
-//! For now, each function must run on `host` only. The typed AST does not store places.
 
 use std::fmt;
 
-use crate::resolved_ast::{self, Place};
+use crate::resolved_ast;
 use crate::typed_ast;
 use crate::types::Type;
 
@@ -17,8 +15,6 @@ use crate::types::Type;
 pub enum TypeError {
     /// A value of type `found` is used where a value of type `expected` is needed.
     Mismatch { expected: Type, found: Type },
-    /// The function with this name runs on a place other than `host`, which is not supported yet.
-    PlacesNotSupported(String),
 }
 
 impl fmt::Display for TypeError {
@@ -27,10 +23,6 @@ impl fmt::Display for TypeError {
             TypeError::Mismatch { expected, found } => {
                 write!(f, "expected a value of type `{expected}`, found `{found}`")
             }
-            TypeError::PlacesNotSupported(name) => write!(
-                f,
-                "function `{name}` runs on a place other than `@host`, which is not supported yet"
-            ),
         }
     }
 }
@@ -46,9 +38,6 @@ pub fn check(program: resolved_ast::Program) -> Result<typed_ast::Program, TypeE
 }
 
 fn check_function(function: resolved_ast::Function) -> Result<typed_ast::Function, TypeError> {
-    if function.places().run_on() != [Place::Host] {
-        return Err(TypeError::PlacesNotSupported(function.name().to_string()));
-    }
     let (name, places, body, variable_names) = function.into_parts();
     // The type of each variable, indexed by its id. `None` until its `let` is checked.
     let mut variable_types = vec![None; variable_names.len()];
@@ -135,7 +124,7 @@ const VARIABLE_ID_IN_RANGE: &str = "`resolved_ast::Function::new` checks variabl
 #[cfg(test)]
 mod tests {
     use super::*;
-    use resolved_ast::{FunctionId, FunctionPlaces, PlaceParameterId, VariableId};
+    use resolved_ast::{FunctionId, FunctionPlaces, Place, PlaceParameterId, VariableId};
 
     /// Checks a program whose only function is `main`, with the body `body`
     /// and `variable_count` variables.
@@ -316,8 +305,6 @@ mod tests {
     }
 
     #[test]
-    // Expected to fail until functions on places are supported.
-    #[should_panic(expected = "PlacesNotSupported")]
     fn function_on_a_place_parameter_is_accepted() {
         let main = host_function("main", vec![], vec![]);
         let helper = resolved_ast::Function::new(

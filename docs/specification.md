@@ -62,7 +62,6 @@ A program that does not follow this grammar is rejected.
 ## Places
 
 A place is a participant that runs code. `docs/places.md` describes the place system that qlc aims for.
-Today a function header can name places, but only functions that run on `host` are accepted.
 
 ```text
 fn hello[@a, @b]@(a, b)() { ... }   // place parameters a and b; runs on a and b
@@ -80,9 +79,23 @@ fn main@host() { ... }              // runs on host; the same as `fn main()`
 - A function whose header does not give its places runs on the built-in place `host`.
   This is true even if it has place parameters.
 - `main` cannot have place parameters. So it runs on `host` only.
-- A function that runs on a place other than the built-in `host` is rejected, because it is not supported yet.
 
 Place names are separate from function and variable names.
+
+Each value of a function is known by every place the function runs on.
+Each of these places has its own copy of the value.
+A value of kind Resource cannot be copied.
+So a function that runs on several places cannot use a value of kind Resource.
+
+```text
+fn hello[@a, @b]@(a, b)() {
+    let d = sim_device();   // rejected: a SimDevice cannot be known by both a and b
+    delete(d);
+}
+```
+
+Only `main` runs, and it runs on `host`. So the code of a function that runs on other places is checked,
+but it does not run yet.
 
 ## Variables
 

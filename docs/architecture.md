@@ -24,6 +24,7 @@ flowchart LR
     ast -- "resolver::resolve" --> rast
     rast -- "typechecker::check" --> tast
     tast -- "linearity::check" --> tast
+    tast -- "places::check" --> tast
     tast -- "projection::project" --> parts
     parts -- "interpreter::run" --> result
 ```
@@ -35,6 +36,7 @@ flowchart LR
 | Resolver     | `src/resolver.rs`    | `ast::Program`          | `resolved_ast::Program` |
 | Type checker | `src/typechecker.rs` | `resolved_ast::Program` | `typed_ast::Program`    |
 | Linearity    | `src/linearity.rs`   | `&typed_ast::Program`   | `()`                    |
+| Places       | `src/places.rs`      | `&typed_ast::Program`   | `()`                    |
 | Projection   | `src/projection.rs`  | `&typed_ast::Program`   | `parts_ir::Program`     |
 | Interpreter  | `src/interpreter.rs` | `&parts_ir::Program`    | `()`                    |
 
@@ -49,7 +51,6 @@ Each function stores the name of each of its variables, indexed by its `Variable
 Several variables can have the same name. The names are used in error messages.
 
 The type checker gives a type to each variable: the type of the value of its `let`.
-For now, it rejects functions that run on a place other than `host`.
 The typed AST keeps the `FunctionPlaces` of each function.
 The typed AST stores the name and the type of each variable of each function, indexed by its `VariableId`.
 The types are in `src/types.rs`. Each type has a kind:
@@ -76,6 +77,14 @@ So each resource is used exactly once.
 It is a separate stage from the type checker, so that its algorithm can change
 without changing the type checker. For example, branches will need a flow analysis.
 
+The place checker checks where values are known. It only reads the typed AST.
+Today every value of a function is known by every place the function runs on.
+A function that runs on several places cannot use a value of kind `Resource`,
+because such a value cannot be copied to each place.
+Otherwise the place checker reports a `PlaceError::ResourceOnSeveralPlaces`.
+When values can be known by fewer places, the projection will need to know which places know each value.
+The place checker will then return a new representation instead of `()`.
+
 The projection splits each function into **parts**, one for each place the function runs on.
 A part is the code of a function that one place runs. A place is a participant that runs code.
 Today every value of a function is known by every place the function runs on,
@@ -91,7 +100,7 @@ The command line passes stdout, and the unit tests pass a `Vec<u8>` to check the
 
 The AST types are in `src/ast.rs`. They are shared by the parser and the resolver.
 The resolved AST types are in `src/resolved_ast.rs`. They are shared by the resolver and the type checker.
-The typed AST types are in `src/typed_ast.rs`. They are shared by the type checker, the linearity checker and the projection.
+The typed AST types are in `src/typed_ast.rs`. They are shared by the type checker, the linearity checker, the place checker and the projection.
 The parts IR types are in `src/parts_ir.rs`. They are shared by the projection and the interpreter.
 Each of these representations has its own types for functions, statements and expressions.
 So each stage can store what it finds, and a stage does not depend on the representations of earlier stages.
@@ -104,7 +113,7 @@ So the algorithm of a stage can be changed without changing the other stages.
 
 ## Errors
 
-Each stage that can fail has its own error type: `LexError`, `ParseError`, `ResolveError`, `TypeError` and `LinearityError`.
+Each stage that can fail has its own error type: `LexError`, `ParseError`, `ResolveError`, `TypeError`, `LinearityError` and `PlaceError`.
 `src/lib.rs` wraps them in one `Error` type.
 
 There are two kinds of problems:

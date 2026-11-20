@@ -172,8 +172,14 @@ fn main_with_place_parameters() {
 }
 
 #[test]
-// Expected to fail until functions on places are supported.
-#[should_panic(expected = "which is not supported yet")]
 fn function_on_places() {
     assert_success(&run_program("function_on_places.ql"), "");
+}
+
+#[test]
+fn sim_device_on_several_places() {
+    assert_error(
+        &run_program("sim_device_on_several_places.ql"),
+        "function `hello` runs on several places, so it cannot use a value of type `SimDevice`, which cannot be copied",
+    );
 }
