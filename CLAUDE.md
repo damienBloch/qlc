@@ -2,6 +2,7 @@
 
 - The code should be written to be easily reviewable and understandable by humans.
 - Changes should be made in small, incremental steps, that can be individually reviewed and understood.
+- Describe succinctly the changes that you made in the chat so they can be reviewed while looking at the code in the same time. This descriptio should be short.
 - Use simple code and avoid unnecessary complexity.
 - Having a clean architecture is especially important. There should be an architecture document with diagrams.
 - When writing prose, use simple technical English and avoid complex sentences, idioms, metaphors or punchlines.
