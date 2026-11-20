@@ -101,10 +101,9 @@ impl Function {
         self.variable_names.len()
     }
 
-    /// Returns the name, the body and the names of the variables of the function.
-    /// The places are not returned.
-    pub fn into_parts(self) -> (String, Vec<Statement>, Vec<String>) {
-        (self.name, self.body, self.variable_names)
+    /// Returns the name, the places, the body and the names of the variables of the function.
+    pub fn into_parts(self) -> (String, FunctionPlaces, Vec<Statement>, Vec<String>) {
+        (self.name, self.places, self.body, self.variable_names)
     }
 }
 
@@ -188,7 +187,7 @@ impl FunctionPlaces {
 }
 
 /// A place that a function runs on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Place {
     /// The built-in place of the computer that runs qlc.
     Host,
@@ -197,7 +196,7 @@ pub enum Place {
 }
 
 /// The index of a place parameter in the place parameters of its function.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PlaceParameterId(pub usize);
 
 /// The index of a function in the functions of a program.

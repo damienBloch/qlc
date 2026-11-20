@@ -2,9 +2,9 @@
 //!
 //! Each function is split into parts. A part is the code of a function that one place runs.
 
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
-pub use crate::resolved_ast::{FunctionId, VariableId};
+pub use crate::resolved_ast::{FunctionId, Place, PlaceParameterId, VariableId};
 
 pub struct Program {
     functions: Vec<Function>,
@@ -44,13 +44,13 @@ impl Program {
 #[derive(Debug, PartialEq, Eq)]
 pub struct Function {
     name: String,
-    parts: BTreeMap<Place, Part>,
+    parts: HashMap<Place, Part>,
 }
 
 impl Function {
     /// Creates a function whose part on each place is `parts[place]`.
     /// Panics if `parts` is empty.
-    pub fn new(name: String, parts: BTreeMap<Place, Part>) -> Self {
+    pub fn new(name: String, parts: HashMap<Place, Part>) -> Self {
         assert!(
             !parts.is_empty(),
             "a function should have at least one part"
@@ -63,16 +63,16 @@ impl Function {
     }
 
     /// The part of the function on each place it runs on.
-    pub fn parts(&self) -> &BTreeMap<Place, Part> {
+    pub fn parts(&self) -> &HashMap<Place, Part> {
         &self.parts
     }
-}
 
-/// A place: a participant that runs parts of functions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Place {
-    /// The computer that runs qlc.
-    Host,
+    /// The part of the function on `place`. Panics if the function does not run on `place`.
+    pub fn part(&self, place: Place) -> &Part {
+        self.parts
+            .get(&place)
+            .expect("a function should only be asked for a part on a place it runs on")
+    }
 }
 
 /// The code of a function that one place runs.
@@ -181,7 +181,7 @@ mod tests {
     fn function(name: &str) -> Function {
         Function::new(
             name.to_string(),
-            BTreeMap::from([(Place::Host, part(vec![], 0))]),
+            HashMap::from([(Place::Host, part(vec![], 0))]),
         )
     }
 
@@ -248,7 +248,18 @@ mod tests {
     #[test]
     #[should_panic(expected = "a function should have at least one part")]
     fn function_without_parts_panics() {
-        Function::new("main".to_string(), BTreeMap::new());
+        Function::new("main".to_string(), HashMap::new());
+    }
+
+    #[test]
+    fn part_on_a_place_of_the_function_is_found() {
+        assert_eq!(function("main").part(Place::Host), &part(vec![], 0));
+    }
+
+    #[test]
+    #[should_panic(expected = "a function should only be asked for a part on a place it runs on")]
+    fn part_on_another_place_panics() {
+        function("main").part(Place::Parameter(PlaceParameterId(0)));
     }
 
     #[test]

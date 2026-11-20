@@ -4,14 +4,13 @@
 
 use std::io::Write;
 
-use crate::parts_ir::{Expression, Part, Program, Statement};
+use crate::parts_ir::{Expression, Part, Place, Program, Statement};
 
-/// Runs the parts of the `main` function of `program`, one after the other.
+/// Runs the host part of the `main` function of `program`.
 /// What the program prints is written to `output`.
 pub fn run(program: &Program, output: &mut impl Write) {
-    for part in program.function(program.main()).parts().values() {
-        run_part(part, output);
-    }
+    let main = program.function(program.main());
+    run_part(main.part(Place::Host), output);
 }
 
 /// Runs `part`.
@@ -67,7 +66,7 @@ const VARIABLE_ID_IN_RANGE: &str = "`parts_ir::Part::new` checks variable ids";
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::collections::HashMap;
 
     use super::*;
     use crate::parts_ir::{Function, FunctionId, Place, VariableId};
@@ -82,7 +81,7 @@ mod tests {
     /// A function named `name` with one host part, whose body is `body` and which has `variable_count` variables.
     fn host_function(name: &str, body: Vec<Statement>, variable_count: usize) -> Function {
         let part = Part::new(body, variable_count);
-        Function::new(name.to_string(), BTreeMap::from([(Place::Host, part)]))
+        Function::new(name.to_string(), HashMap::from([(Place::Host, part)]))
     }
 
     /// A program with only a `main` function, as in [`host_function`].

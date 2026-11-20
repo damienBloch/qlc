@@ -1,10 +1,9 @@
 //! The projection splits each function into parts, one for each place it runs on.
 //!
-//! Today every function runs on the host only, so each function has one part.
+//! Today every value of a function is known by every place the function runs on.
+//! So each part has the whole body of the function.
 
-use std::collections::BTreeMap;
-
-use crate::parts_ir::{self, Part, Place};
+use crate::parts_ir::{self, Part};
 use crate::typed_ast::{Expression, Function, Program, Statement};
 
 /// Returns `program` with each function split into parts.
@@ -14,12 +13,16 @@ pub fn project(program: &Program) -> parts_ir::Program {
 }
 
 fn project_function(function: &Function) -> parts_ir::Function {
-    let body = function.body().iter().map(project_statement).collect();
-    let host_part = Part::new(body, function.variable_count());
-    parts_ir::Function::new(
-        function.name().to_string(),
-        BTreeMap::from([(Place::Host, host_part)]),
-    )
+    let parts = function
+        .places()
+        .run_on()
+        .iter()
+        .map(|&place| {
+            let body = function.body().iter().map(project_statement).collect();
+            (place, Part::new(body, function.variable_count()))
+        })
+        .collect();
+    parts_ir::Function::new(function.name().to_string(), parts)
 }
 
 fn project_statement(statement: &Statement) -> parts_ir::Statement {
@@ -43,17 +46,26 @@ fn project_expression(expression: &Expression) -> parts_ir::Expression {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
-    use crate::typed_ast::{FunctionId, Variable, VariableId};
+    use crate::typed_ast::{
+        FunctionId, FunctionPlaces, Place, PlaceParameterId, Variable, VariableId,
+    };
     use crate::types::Type;
 
-    /// A function with the body `body` and one variable of type `Int`.
-    fn function(name: &str, body: Vec<Statement>) -> Function {
+    /// A function that runs on `host`, with the body `body` and one variable of type `Int`.
+    fn host_function(name: &str, body: Vec<Statement>) -> Function {
+        function_on(name, FunctionPlaces::host(), body)
+    }
+
+    /// A function that runs on `places`, with the body `body` and one variable of type `Int`.
+    fn function_on(name: &str, places: FunctionPlaces, body: Vec<Statement>) -> Function {
         let variables = vec![Variable {
             name: "x".to_string(),
             variable_type: Type::Int,
         }];
-        Function::new(name.to_string(), body, variables)
+        Function::new(name.to_string(), places, body, variables)
     }
 
     /// A statement that sets the variable to `value`.
@@ -72,21 +84,23 @@ mod tests {
         }
     }
 
+    /// A part with the body `body` and one variable.
+    fn part(body: Vec<parts_ir::Statement>) -> Part {
+        Part::new(body, 1)
+    }
+
     /// A projected function named `name` with one host part, whose body is `body`.
-    fn host_function(name: &str, body: Vec<parts_ir::Statement>) -> parts_ir::Function {
-        parts_ir::Function::new(
-            name.to_string(),
-            BTreeMap::from([(Place::Host, Part::new(body, 1))]),
-        )
+    fn projected_host_function(name: &str, body: Vec<parts_ir::Statement>) -> parts_ir::Function {
+        parts_ir::Function::new(name.to_string(), HashMap::from([(Place::Host, part(body))]))
     }
 
     #[test]
-    fn function_gives_one_host_part_with_the_same_statements() {
+    fn function_on_host_gives_one_host_part_with_the_same_statements() {
         let body = vec![
             let_integer(1),
             Statement::Print(Expression::Variable(VariableId(0))),
         ];
-        let program = Program::new(vec![function("main", body)], FunctionId(0));
+        let program = Program::new(vec![host_function("main", body)], FunctionId(0));
 
         let expected_body = vec![
             projected_let_integer(1),
@@ -94,16 +108,36 @@ mod tests {
         ];
         assert_eq!(
             project(&program).functions(),
-            [host_function("main", expected_body)]
+            [projected_host_function("main", expected_body)]
         );
+    }
+
+    #[test]
+    fn function_on_two_places_gives_one_part_per_place_with_the_whole_body() {
+        let a = Place::Parameter(PlaceParameterId(0));
+        let b = Place::Parameter(PlaceParameterId(1));
+        let places = FunctionPlaces::new(vec!["a".to_string(), "b".to_string()], vec![a, b]);
+        let program = Program::new(
+            vec![
+                host_function("main", vec![let_integer(0)]),
+                function_on("hello", places, vec![let_integer(1)]),
+            ],
+            FunctionId(0),
+        );
+
+        let expected_parts = HashMap::from([
+            (a, part(vec![projected_let_integer(1)])),
+            (b, part(vec![projected_let_integer(1)])),
+        ]);
+        assert_eq!(project(&program).functions()[1].parts(), &expected_parts);
     }
 
     #[test]
     fn every_function_is_projected_and_main_is_kept() {
         let program = Program::new(
             vec![
-                function("helper", vec![let_integer(1)]),
-                function("main", vec![let_integer(2)]),
+                host_function("helper", vec![let_integer(1)]),
+                host_function("main", vec![let_integer(2)]),
             ],
             FunctionId(1),
         );
@@ -112,8 +146,8 @@ mod tests {
         assert_eq!(
             projected.functions(),
             [
-                host_function("helper", vec![projected_let_integer(1)]),
-                host_function("main", vec![projected_let_integer(2)]),
+                projected_host_function("helper", vec![projected_let_integer(1)]),
+                projected_host_function("main", vec![projected_let_integer(2)]),
             ]
         );
         assert_eq!(projected.main(), FunctionId(1));

@@ -98,7 +98,7 @@ const VARIABLE_ID_IN_RANGE: &str = "`typed_ast::Function::new` checks variable i
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::typed_ast::{FunctionId, Variable, VariableId};
+    use crate::typed_ast::{FunctionId, FunctionPlaces, Variable, VariableId};
     use crate::types::Type;
 
     /// Checks a program whose only function is `main`, with the body `body`
@@ -111,7 +111,7 @@ mod tests {
                 variable_type: *variable_type,
             })
             .collect();
-        let main = Function::new("main".to_string(), body, variables);
+        let main = Function::new("main".to_string(), FunctionPlaces::host(), body, variables);
         check(&Program::new(vec![main], FunctionId(0)))
     }
 
@@ -236,13 +236,14 @@ mod tests {
     fn every_function_is_checked() {
         let helper = Function::new(
             "helper".to_string(),
+            FunctionPlaces::host(),
             vec![let_sim_device(0), delete_variable(0), delete_variable(0)],
             vec![Variable {
                 name: "d".to_string(),
                 variable_type: Type::SimDevice,
             }],
         );
-        let main = Function::new("main".to_string(), vec![], vec![]);
+        let main = Function::new("main".to_string(), FunctionPlaces::host(), vec![], vec![]);
         assert_eq!(
             check(&Program::new(vec![helper, main], FunctionId(1))),
             Err(use_after_move("d"))

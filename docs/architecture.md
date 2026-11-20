@@ -42,13 +42,15 @@ The resolver checks the names of the program: function names must be unique,
 there must be a `main` function, and each variable must be defined before it is used.
 It also resolves the places of each function header: each place is the built-in `host`
 or a place parameter of the function, referred to by a `PlaceParameterId`.
+The place parameters of a function and the places it runs on are stored together in a `FunctionPlaces`.
 The resolved AST stores which function is `main`.
 It refers to each variable by a `VariableId`, its index in its function, instead of its name.
 Each function stores the name of each of its variables, indexed by its `VariableId`.
 Several variables can have the same name. The names are used in error messages.
 
 The type checker gives a type to each variable: the type of the value of its `let`.
-For now, it rejects functions that run on a place other than `host`, and the typed AST does not store places.
+For now, it rejects functions that run on a place other than `host`.
+The typed AST keeps the `FunctionPlaces` of each function.
 The typed AST stores the name and the type of each variable of each function, indexed by its `VariableId`.
 The types are in `src/types.rs`. Each type has a kind:
 
@@ -76,11 +78,12 @@ without changing the type checker. For example, branches will need a flow analys
 
 The projection splits each function into **parts**, one for each place the function runs on.
 A part is the code of a function that one place runs. A place is a participant that runs code.
-Today the only place is the host, so each function has one part.
+Today every value of a function is known by every place the function runs on,
+so each part has the whole body of the function.
 The parts IR refers to functions and variables by the same `FunctionId` and `VariableId` as the typed AST.
 Each part stores its number of variables.
 
-The interpreter runs the parts of `main` one after the other.
+The interpreter runs the host part of `main`.
 It uses the number of variables of a part to store their values in a `Vec`.
 The interpreter also takes an output writer (`&mut impl Write`).
 `print` writes to it.
@@ -92,8 +95,8 @@ The typed AST types are in `src/typed_ast.rs`. They are shared by the type check
 The parts IR types are in `src/parts_ir.rs`. They are shared by the projection and the interpreter.
 Each of these representations has its own types for functions, statements and expressions.
 So each stage can store what it finds, and a stage does not depend on the representations of earlier stages.
-The only exception is the ids `FunctionId` and `VariableId`: they are defined in `src/resolved_ast.rs`
-and the typed AST and the parts IR use them too.
+The only exceptions are the ids `FunctionId`, `VariableId` and `PlaceParameterId`, and the place types
+`Place` and `FunctionPlaces`: they are defined in `src/resolved_ast.rs`, and the later representations use them too.
 
 Each stage is one public function.
 A stage only depends on the types of its input and output.

@@ -9,7 +9,7 @@
 //! 2. each variable is set by exactly one `let`;
 //! 3. each variable is set before it is read.
 
-pub use crate::resolved_ast::{FunctionId, VariableId};
+pub use crate::resolved_ast::{FunctionId, FunctionPlaces, Place, PlaceParameterId, VariableId};
 use crate::types::Type;
 
 pub struct Program {
@@ -48,6 +48,7 @@ impl Program {
 #[derive(Debug, PartialEq, Eq)]
 pub struct Function {
     name: String,
+    places: FunctionPlaces,
     body: Vec<Statement>,
     variables: Vec<Variable>,
 }
@@ -55,10 +56,16 @@ pub struct Function {
 impl Function {
     /// Creates a function whose variables are `variables`, indexed by their [`VariableId`].
     /// Panics if `body` does not follow the rules about variables of the module documentation.
-    pub fn new(name: String, body: Vec<Statement>, variables: Vec<Variable>) -> Self {
+    pub fn new(
+        name: String,
+        places: FunctionPlaces,
+        body: Vec<Statement>,
+        variables: Vec<Variable>,
+    ) -> Self {
         check_variables(&body, variables.len());
         Function {
             name,
+            places,
             body,
             variables,
         }
@@ -66,6 +73,10 @@ impl Function {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn places(&self) -> &FunctionPlaces {
+        &self.places
     }
 
     pub fn body(&self) -> &[Statement] {
@@ -166,7 +177,7 @@ mod tests {
                 variable_type: Type::Int,
             })
             .collect();
-        Function::new("main".to_string(), body, variables)
+        Function::new("main".to_string(), FunctionPlaces::host(), body, variables)
     }
 
     /// A statement that sets `variable` to the integer `value`.

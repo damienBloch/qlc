@@ -49,7 +49,7 @@ fn check_function(function: resolved_ast::Function) -> Result<typed_ast::Functio
     if function.places().run_on() != [Place::Host] {
         return Err(TypeError::PlacesNotSupported(function.name().to_string()));
     }
-    let (name, body, variable_names) = function.into_parts();
+    let (name, places, body, variable_names) = function.into_parts();
     // The type of each variable, indexed by its id. `None` until its `let` is checked.
     let mut variable_types = vec![None; variable_names.len()];
     let body = body
@@ -66,7 +66,7 @@ fn check_function(function: resolved_ast::Function) -> Result<typed_ast::Functio
             ),
         })
         .collect();
-    Ok(typed_ast::Function::new(name, body, variables))
+    Ok(typed_ast::Function::new(name, places, body, variables))
 }
 
 /// Checks `statement`. `variable_types` contains the type of each variable of its function,
@@ -225,6 +225,7 @@ mod tests {
             program.function(program.main()),
             &typed_ast::Function::new(
                 "main".to_string(),
+                FunctionPlaces::host(),
                 vec![
                     typed_ast::Statement::Let {
                         variable: VariableId(0),
