@@ -46,7 +46,7 @@ pub fn check(program: resolved_ast::Program) -> Result<typed_ast::Program, TypeE
 }
 
 fn check_function(function: resolved_ast::Function) -> Result<typed_ast::Function, TypeError> {
-    if function.places() != [Place::Host] {
+    if function.places().run_on() != [Place::Host] {
         return Err(TypeError::PlacesNotSupported(function.name().to_string()));
     }
     let (name, body, variable_names) = function.into_parts();
@@ -135,7 +135,7 @@ const VARIABLE_ID_IN_RANGE: &str = "`resolved_ast::Function::new` checks variabl
 #[cfg(test)]
 mod tests {
     use super::*;
-    use resolved_ast::{FunctionId, PlaceParameterId, VariableId};
+    use resolved_ast::{FunctionId, FunctionPlaces, PlaceParameterId, VariableId};
 
     /// Checks a program whose only function is `main`, with the body `body`
     /// and `variable_count` variables.
@@ -156,8 +156,7 @@ mod tests {
     ) -> resolved_ast::Function {
         resolved_ast::Function::new(
             name.to_string(),
-            vec![],
-            vec![Place::Host],
+            FunctionPlaces::host(),
             body,
             variable_names,
         )
@@ -304,8 +303,7 @@ mod tests {
         let main = host_function("main", vec![], vec![]);
         let helper = resolved_ast::Function::new(
             "helper".to_string(),
-            vec!["a".to_string()],
-            vec![Place::Host],
+            FunctionPlaces::new(vec!["a".to_string()], vec![Place::Host]),
             vec![],
             vec![],
         );
@@ -323,8 +321,10 @@ mod tests {
         let main = host_function("main", vec![], vec![]);
         let helper = resolved_ast::Function::new(
             "helper".to_string(),
-            vec!["a".to_string()],
-            vec![Place::Parameter(PlaceParameterId(0))],
+            FunctionPlaces::new(
+                vec!["a".to_string()],
+                vec![Place::Parameter(PlaceParameterId(0))],
+            ),
             vec![],
             vec![],
         );

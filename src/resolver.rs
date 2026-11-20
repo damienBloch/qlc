@@ -15,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use crate::ast;
-use crate::resolved_ast::{self, FunctionId, Place, PlaceParameterId, VariableId};
+use crate::resolved_ast::{self, FunctionId, FunctionPlaces, Place, PlaceParameterId, VariableId};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ResolveError {
@@ -83,10 +83,11 @@ fn check_no_duplicate_functions(program: &ast::Program) -> Result<(), ResolveErr
 
 fn resolve_function(function: ast::Function) -> Result<resolved_ast::Function, ResolveError> {
     check_no_duplicate_place_parameters(&function.place_parameters)?;
-    let places = match &function.places {
+    let run_on = match &function.places {
         Some(names) => resolve_places(names, &function.place_parameters)?,
         None => vec![Place::Host],
     };
+    let places = FunctionPlaces::new(function.place_parameters, run_on);
     let mut variables = Variables::default();
     let body = function
         .body
@@ -95,7 +96,6 @@ fn resolve_function(function: ast::Function) -> Result<resolved_ast::Function, R
         .collect::<Result<_, _>>()?;
     Ok(resolved_ast::Function::new(
         function.name,
-        function.place_parameters,
         places,
         body,
         variables.names,
@@ -267,7 +267,10 @@ mod tests {
         places: Option<&[&str]>,
     ) -> Result<Vec<Place>, ResolveError> {
         let function = ast_function_with_places("f", place_parameters, places);
-        Ok(resolve_with(function)?.functions()[1].places().to_vec())
+        Ok(resolve_with(function)?.functions()[1]
+            .places()
+            .run_on()
+            .to_vec())
     }
 
     /// Resolves a program whose only function is `main`.
@@ -363,8 +366,7 @@ mod tests {
             program.function(program.main()),
             &resolved_ast::Function::new(
                 "main".to_string(),
-                vec![],
-                vec![Place::Host],
+                FunctionPlaces::host(),
                 vec![resolved_ast::Statement::Print(
                     resolved_ast::Expression::Integer(42)
                 )],
@@ -581,7 +583,10 @@ mod tests {
     fn place_parameter_names_are_kept() {
         let function = ast_function_with_places("f", &["a", "b"], Some(&["a"]));
         let program = resolve_with(function).expect("the program should be valid");
-        assert_eq!(program.functions()[1].place_parameter_names(), ["a", "b"]);
+        assert_eq!(
+            program.functions()[1].places().parameter_names(),
+            ["a", "b"]
+        );
     }
 
     #[test]
@@ -612,7 +617,10 @@ mod tests {
     fn main_can_be_written_on_host() {
         let main = ast_function_with_places("main", &[], Some(&["host"]));
         let program = resolve_main(main).expect("the program should be valid");
-        assert_eq!(program.function(program.main()).places(), [Place::Host]);
+        assert_eq!(
+            program.function(program.main()).places(),
+            &FunctionPlaces::host()
+        );
     }
 
     #[test]
