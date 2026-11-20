@@ -10,6 +10,17 @@ pub struct Program {
 #[derive(Debug, PartialEq, Eq)]
 pub struct Function {
     pub name: String,
+    /// The names of the place parameters, without the `@`.
+    ///
+    /// - `fn f[@a, @b]@(a, b)() {}` gives `["a", "b"]`.
+    /// - `fn f() {}` gives `[]`.
+    pub place_parameters: Vec<String>,
+    /// The names of the places the function runs on, as written after the place parameters.
+    ///
+    /// - `fn f[@a]@a() {}` gives `Some(["a"])`.
+    /// - `fn f[@a, @b]@(a, b)() {}` gives `Some(["a", "b"])`.
+    /// - `fn f() {}` gives `None`.
+    pub places: Option<Vec<String>>,
     pub body: Vec<Statement>,
 }
 

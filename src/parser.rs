@@ -3,15 +3,18 @@
 //! Grammar:
 //!
 //! ```text
-//! program    = function*
-//! function   = "fn" identifier "(" ")" block
-//! block      = "{" statement* "}"
-//! statement  = print | delete | let
-//! print      = "print" "(" expression ")" ";"
-//! delete     = "delete" "(" expression ")" ";"
-//! let        = "let" identifier "=" expression ";"
-//! expression = integer | identifier | sim_device
-//! sim_device = "sim_device" "(" ")"
+//! program          = function*
+//! function         = "fn" identifier [ place_parameters ] [ places ] "(" ")" block
+//! place_parameters = "[" place { "," place } "]"
+//! places           = place | "@" "(" identifier { "," identifier } ")"
+//! place            = "@" identifier
+//! block            = "{" statement* "}"
+//! statement        = print | delete | let
+//! print            = "print" "(" expression ")" ";"
+//! delete           = "delete" "(" expression ")" ";"
+//! let              = "let" identifier "=" expression ";"
+//! expression       = integer | identifier | sim_device
+//! sim_device       = "sim_device" "(" ")"
 //! ```
 
 use std::fmt;
@@ -63,10 +66,65 @@ impl<'a> Parser<'a> {
     fn parse_function(&mut self) -> Result<Function, ParseError> {
         self.expect(&Token::Fn)?;
         let name = self.expect_identifier()?;
+        let place_parameters = if self.peek() == Some(&Token::OpenBracket) {
+            self.parse_place_parameters()?
+        } else {
+            vec![]
+        };
+        let places = if self.peek() == Some(&Token::At) {
+            Some(self.parse_places()?)
+        } else {
+            None
+        };
         self.expect(&Token::OpenParen)?;
         self.expect(&Token::CloseParen)?;
         let body = self.parse_block()?;
-        Ok(Function { name, body })
+        Ok(Function {
+            name,
+            place_parameters,
+            places,
+            body,
+        })
+    }
+
+    /// Parses `[@a, @b]` and returns the names of the places.
+    fn parse_place_parameters(&mut self) -> Result<Vec<String>, ParseError> {
+        self.expect(&Token::OpenBracket)?;
+        let names = self.parse_comma_separated(Self::parse_place)?;
+        self.expect(&Token::CloseBracket)?;
+        Ok(names)
+    }
+
+    /// Parses `@a` or `@(a, b)` and returns the names of the places.
+    fn parse_places(&mut self) -> Result<Vec<String>, ParseError> {
+        self.expect(&Token::At)?;
+        if self.peek() == Some(&Token::OpenParen) {
+            self.expect(&Token::OpenParen)?;
+            let names = self.parse_comma_separated(Self::expect_identifier)?;
+            self.expect(&Token::CloseParen)?;
+            Ok(names)
+        } else {
+            Ok(vec![self.expect_identifier()?])
+        }
+    }
+
+    /// Parses `@a` and returns the name of the place.
+    fn parse_place(&mut self) -> Result<String, ParseError> {
+        self.expect(&Token::At)?;
+        self.expect_identifier()
+    }
+
+    /// Parses one or more items with `parse_item`, separated by commas.
+    fn parse_comma_separated<T>(
+        &mut self,
+        parse_item: fn(&mut Self) -> Result<T, ParseError>,
+    ) -> Result<Vec<T>, ParseError> {
+        let mut items = vec![parse_item(self)?];
+        while self.peek() == Some(&Token::Comma) {
+            self.expect(&Token::Comma)?;
+            items.push(parse_item(self)?);
+        }
+        Ok(items)
     }
 
     /// Parses a list of statements between braces.
@@ -183,11 +241,32 @@ mod tests {
         parse(&tokens)
     }
 
+    /// A function without places.
     fn function(name: &str, body: Vec<Statement>) -> Function {
         Function {
             name: name.to_string(),
+            place_parameters: vec![],
+            places: None,
             body,
         }
+    }
+
+    /// Parses `source`, which has one function with an empty body,
+    /// and returns its place parameters and its places.
+    fn parse_header_places(source: &str) -> Result<(Vec<String>, Option<Vec<String>>), ParseError> {
+        let mut program = parse_source(source)?;
+        assert_eq!(
+            program.functions.len(),
+            1,
+            "test source should have one function"
+        );
+        let function = program.functions.remove(0);
+        Ok((function.place_parameters, function.places))
+    }
+
+    /// Converts names to `String`s.
+    fn names(names: &[&str]) -> Vec<String> {
+        names.iter().map(|name| name.to_string()).collect()
     }
 
     /// A statement that prints the integer `value`.
@@ -271,6 +350,90 @@ mod tests {
             Err(ParseError::UnexpectedToken {
                 expected: "`)`".to_string(),
                 found: Token::Identifier("x".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn place_parameters() {
+        assert_eq!(
+            parse_header_places("fn f[@a, @b]() {}"),
+            Ok((names(&["a", "b"]), None))
+        );
+    }
+
+    #[test]
+    fn one_place() {
+        assert_eq!(
+            parse_header_places("fn f@a() {}"),
+            Ok((vec![], Some(names(&["a"]))))
+        );
+    }
+
+    #[test]
+    fn list_of_places() {
+        assert_eq!(
+            parse_header_places("fn f@(a, b)() {}"),
+            Ok((vec![], Some(names(&["a", "b"]))))
+        );
+    }
+
+    #[test]
+    fn list_of_one_place() {
+        assert_eq!(
+            parse_header_places("fn f@(a)() {}"),
+            Ok((vec![], Some(names(&["a"]))))
+        );
+    }
+
+    #[test]
+    fn place_parameters_and_places() {
+        assert_eq!(
+            parse_header_places("fn f[@a, @b]@(b, a)() {}"),
+            Ok((names(&["a", "b"]), Some(names(&["b", "a"]))))
+        );
+    }
+
+    #[test]
+    fn empty_place_parameters_are_an_error() {
+        assert_eq!(
+            parse_source("fn f[]() {}"),
+            Err(ParseError::UnexpectedToken {
+                expected: "`@`".to_string(),
+                found: Token::CloseBracket,
+            })
+        );
+    }
+
+    #[test]
+    fn place_parameter_without_at_is_an_error() {
+        assert_eq!(
+            parse_source("fn f[a]() {}"),
+            Err(ParseError::UnexpectedToken {
+                expected: "`@`".to_string(),
+                found: Token::Identifier("a".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn empty_list_of_places_is_an_error() {
+        assert_eq!(
+            parse_source("fn f@() {}"),
+            Err(ParseError::UnexpectedToken {
+                expected: "identifier".to_string(),
+                found: Token::CloseParen,
+            })
+        );
+    }
+
+    #[test]
+    fn places_before_place_parameters_are_an_error() {
+        assert_eq!(
+            parse_source("fn f@a[@a]() {}"),
+            Err(ParseError::UnexpectedToken {
+                expected: "`(`".to_string(),
+                found: Token::OpenBracket,
             })
         );
     }

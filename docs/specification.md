@@ -26,7 +26,7 @@ There are no comments.
 | keyword     | `fn`, `let`, `print`, `delete`, `sim_device`                         |
 | identifier  | an ASCII letter or `_`, followed by ASCII letters, digits or `_`; not a keyword |
 | integer     | one or more ASCII digits, in base 10                                 |
-| punctuation | `(`, `)`, `{`, `}`, `;`, `=`                                         |
+| punctuation | `(`, `)`, `{`, `}`, `[`, `]`, `;`, `=`, `,`, `@`                     |
 
 - Each token is as long as possible. For example, `letx` is one identifier, not `let` followed by `x`.
 - An integer must be at most 9223372036854775807 (2^63 − 1). Leading zeros are allowed.
@@ -35,15 +35,18 @@ There are no comments.
 ## Syntax
 
 ```text
-program    = function*
-function   = "fn" identifier "(" ")" block
-block      = "{" statement* "}"
-statement  = print | delete | let
-print      = "print" "(" expression ")" ";"
-delete     = "delete" "(" expression ")" ";"
-let        = "let" identifier "=" expression ";"
-expression = integer | identifier | sim_device
-sim_device = "sim_device" "(" ")"
+program          = function*
+function         = "fn" identifier [ place_parameters ] [ places ] "(" ")" block
+place_parameters = "[" place { "," place } "]"
+places           = place | "@" "(" identifier { "," identifier } ")"
+place            = "@" identifier
+block            = "{" statement* "}"
+statement        = print | delete | let
+print            = "print" "(" expression ")" ";"
+delete           = "delete" "(" expression ")" ";"
+let              = "let" identifier "=" expression ";"
+expression       = integer | identifier | sim_device
+sim_device       = "sim_device" "(" ")"
 ```
 
 A program that does not follow this grammar is rejected.
@@ -55,6 +58,31 @@ A program that does not follow this grammar is rejected.
 - Functions have no parameters, and there is no way to call a function.
   Only `main` runs. The rules of this document still apply to every function.
 - Each function is checked on its own.
+
+## Places
+
+A place is a participant that runs code. `docs/places.md` describes the place system that qlc aims for.
+Today a function header can name places, but only functions that run on `host` are accepted.
+
+```text
+fn hello[@a, @b]@(a, b)() { ... }   // place parameters a and b; runs on a and b
+fn helper[@a]() { ... }             // place parameter a; runs on host
+fn main@host() { ... }              // runs on host; the same as `fn main()`
+```
+
+- `[@a, @b]` declares the **place parameters** of the function.
+  Two place parameters of a function cannot have the same name.
+- `@a` or `@(a, b)` gives the places the function **runs on**. A place cannot be listed twice.
+- In the places a function runs on, a name refers to a place parameter of the function.
+  Otherwise, `host` refers to the built-in place `host`, the computer that runs qlc.
+  Any other name is an error.
+  So a place parameter named `host` hides the built-in place.
+- A function whose header does not give its places runs on the built-in place `host`.
+  This is true even if it has place parameters.
+- `main` cannot have place parameters. So it runs on `host` only.
+- A function that runs on a place other than the built-in `host` is rejected, because it is not supported yet.
+
+Place names are separate from function and variable names.
 
 ## Variables
 

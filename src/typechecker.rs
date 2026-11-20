@@ -3,10 +3,12 @@
 //!
 //! The type of a variable is the type of the value of its `let`.
 //! `print` only accepts an `Int`, and `delete` only accepts a `SimDevice`.
+//!
+//! For now, each function must run on `host` only. The typed AST does not store places.
 
 use std::fmt;
 
-use crate::resolved_ast;
+use crate::resolved_ast::{self, Place};
 use crate::typed_ast;
 use crate::types::Type;
 
@@ -15,6 +17,8 @@ use crate::types::Type;
 pub enum TypeError {
     /// A value of type `found` is used where a value of type `expected` is needed.
     Mismatch { expected: Type, found: Type },
+    /// The function with this name runs on a place other than `host`, which is not supported yet.
+    PlacesNotSupported(String),
 }
 
 impl fmt::Display for TypeError {
@@ -23,6 +27,10 @@ impl fmt::Display for TypeError {
             TypeError::Mismatch { expected, found } => {
                 write!(f, "expected a value of type `{expected}`, found `{found}`")
             }
+            TypeError::PlacesNotSupported(name) => write!(
+                f,
+                "function `{name}` runs on a place other than `@host`, which is not supported yet"
+            ),
         }
     }
 }
@@ -38,6 +46,9 @@ pub fn check(program: resolved_ast::Program) -> Result<typed_ast::Program, TypeE
 }
 
 fn check_function(function: resolved_ast::Function) -> Result<typed_ast::Function, TypeError> {
+    if function.places() != [Place::Host] {
+        return Err(TypeError::PlacesNotSupported(function.name().to_string()));
+    }
     let (name, body, variable_names) = function.into_parts();
     // The type of each variable, indexed by its id. `None` until its `let` is checked.
     let mut variable_types = vec![None; variable_names.len()];
@@ -124,7 +135,7 @@ const VARIABLE_ID_IN_RANGE: &str = "`resolved_ast::Function::new` checks variabl
 #[cfg(test)]
 mod tests {
     use super::*;
-    use resolved_ast::{FunctionId, VariableId};
+    use resolved_ast::{FunctionId, PlaceParameterId, VariableId};
 
     /// Checks a program whose only function is `main`, with the body `body`
     /// and `variable_count` variables.
@@ -133,8 +144,23 @@ mod tests {
         variable_count: usize,
     ) -> Result<typed_ast::Program, TypeError> {
         let variable_names = (0..variable_count).map(|i| format!("v{i}")).collect();
-        let main = resolved_ast::Function::new("main".to_string(), body, variable_names);
+        let main = host_function("main", body, variable_names);
         check(resolved_ast::Program::new(vec![main], FunctionId(0)))
+    }
+
+    /// A resolved function named `name` that runs on `host`, without place parameters.
+    fn host_function(
+        name: &str,
+        body: Vec<resolved_ast::Statement>,
+        variable_names: Vec<String>,
+    ) -> resolved_ast::Function {
+        resolved_ast::Function::new(
+            name.to_string(),
+            vec![],
+            vec![Place::Host],
+            body,
+            variable_names,
+        )
     }
 
     /// Like [`check_main_result`], for a program that has no type error.
@@ -217,8 +243,7 @@ mod tests {
 
     #[test]
     fn main_stays_the_same() {
-        let functions = ["helper", "main"]
-            .map(|name| resolved_ast::Function::new(name.to_string(), vec![], vec![]));
+        let functions = ["helper", "main"].map(|name| host_function(name, vec![], vec![]));
         let program = check(resolved_ast::Program::new(functions.into(), FunctionId(1)))
             .expect("the program should have no type error");
         assert_eq!(program.main(), FunctionId(1));
@@ -272,5 +297,41 @@ mod tests {
                 found: Type::Int,
             }
         );
+    }
+
+    #[test]
+    fn function_on_host_with_place_parameters_is_accepted() {
+        let main = host_function("main", vec![], vec![]);
+        let helper = resolved_ast::Function::new(
+            "helper".to_string(),
+            vec!["a".to_string()],
+            vec![Place::Host],
+            vec![],
+            vec![],
+        );
+        check(resolved_ast::Program::new(
+            vec![main, helper],
+            FunctionId(0),
+        ))
+        .expect("the program should have no type error");
+    }
+
+    #[test]
+    // Expected to fail until functions on places are supported.
+    #[should_panic(expected = "PlacesNotSupported")]
+    fn function_on_a_place_parameter_is_accepted() {
+        let main = host_function("main", vec![], vec![]);
+        let helper = resolved_ast::Function::new(
+            "helper".to_string(),
+            vec!["a".to_string()],
+            vec![Place::Parameter(PlaceParameterId(0))],
+            vec![],
+            vec![],
+        );
+        check(resolved_ast::Program::new(
+            vec![main, helper],
+            FunctionId(0),
+        ))
+        .expect("the program should have no type error");
     }
 }

@@ -4,18 +4,30 @@
 //! and that each variable is defined before it is used.
 //! A `let` can reuse the name of a variable: it defines a new variable,
 //! and the name refers to the new variable after this `let`.
+//!
+//! Places have their own names, separate from functions and variables.
+//! In a function header, a place name refers to a place parameter of the function,
+//! or else to the built-in place `host`. So a place parameter named `host` hides the built-in place.
+//! A function whose header does not give its places runs on the built-in place `host`.
+//! The `main` function has no place parameters, so it runs on `host` only.
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use crate::ast;
-use crate::resolved_ast::{self, FunctionId, VariableId};
+use crate::resolved_ast::{self, FunctionId, Place, PlaceParameterId, VariableId};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ResolveError {
     MissingMain,
     DuplicateFunction(String),
     UnknownVariable(String),
+    /// Two place parameters of a function have this name.
+    DuplicatePlaceParameter(String),
+    UnknownPlace(String),
+    /// A function header lists this place twice in the places the function runs on.
+    DuplicatePlace(String),
+    MainWithPlaceParameters,
 }
 
 impl fmt::Display for ResolveError {
@@ -26,6 +38,16 @@ impl fmt::Display for ResolveError {
                 write!(f, "function `{name}` is defined more than once")
             }
             ResolveError::UnknownVariable(name) => write!(f, "unknown variable `{name}`"),
+            ResolveError::DuplicatePlaceParameter(name) => {
+                write!(f, "place parameter `@{name}` is declared more than once")
+            }
+            ResolveError::UnknownPlace(name) => write!(f, "unknown place `@{name}`"),
+            ResolveError::DuplicatePlace(name) => {
+                write!(f, "place `@{name}` is listed more than once")
+            }
+            ResolveError::MainWithPlaceParameters => {
+                write!(f, "the `main` function cannot have place parameters")
+            }
         }
     }
 }
@@ -38,6 +60,9 @@ pub fn resolve(program: ast::Program) -> Result<resolved_ast::Program, ResolveEr
         .iter()
         .position(|function| function.name == "main")
         .ok_or(ResolveError::MissingMain)?;
+    if !program.functions[main].place_parameters.is_empty() {
+        return Err(ResolveError::MainWithPlaceParameters);
+    }
     let functions = program
         .functions
         .into_iter()
@@ -57,6 +82,11 @@ fn check_no_duplicate_functions(program: &ast::Program) -> Result<(), ResolveErr
 }
 
 fn resolve_function(function: ast::Function) -> Result<resolved_ast::Function, ResolveError> {
+    check_no_duplicate_place_parameters(&function.place_parameters)?;
+    let places = match &function.places {
+        Some(names) => resolve_places(names, &function.place_parameters)?,
+        None => vec![Place::Host],
+    };
     let mut variables = Variables::default();
     let body = function
         .body
@@ -65,9 +95,53 @@ fn resolve_function(function: ast::Function) -> Result<resolved_ast::Function, R
         .collect::<Result<_, _>>()?;
     Ok(resolved_ast::Function::new(
         function.name,
+        function.place_parameters,
+        places,
         body,
         variables.names,
     ))
+}
+
+fn check_no_duplicate_place_parameters(names: &[String]) -> Result<(), ResolveError> {
+    let mut seen = HashSet::new();
+    for name in names {
+        if !seen.insert(name.as_str()) {
+            return Err(ResolveError::DuplicatePlaceParameter(name.clone()));
+        }
+    }
+    Ok(())
+}
+
+/// Resolves the places a function runs on, named `names`.
+/// `place_parameters` contains the names of the place parameters of the function.
+fn resolve_places(
+    names: &[String],
+    place_parameters: &[String],
+) -> Result<Vec<Place>, ResolveError> {
+    let mut places = Vec::new();
+    for name in names {
+        let place = resolve_place(name, place_parameters)?;
+        if places.contains(&place) {
+            return Err(ResolveError::DuplicatePlace(name.clone()));
+        }
+        places.push(place);
+    }
+    Ok(places)
+}
+
+/// Resolves the place named `name`.
+/// `place_parameters` contains the names of the place parameters of its function.
+fn resolve_place(name: &str, place_parameters: &[String]) -> Result<Place, ResolveError> {
+    if let Some(index) = place_parameters
+        .iter()
+        .position(|parameter| parameter == name)
+    {
+        Ok(Place::Parameter(PlaceParameterId(index)))
+    } else if name == "host" {
+        Ok(Place::Host)
+    } else {
+        Err(ResolveError::UnknownPlace(name.to_string()))
+    }
 }
 
 /// Resolves `statement`. `variables` contains the variables defined before it in its function.
@@ -141,10 +215,7 @@ mod tests {
         ast::Program {
             functions: function_names
                 .iter()
-                .map(|name| ast::Function {
-                    name: name.to_string(),
-                    body: vec![],
-                })
+                .map(|name| ast_function(name, vec![]))
                 .collect(),
         }
     }
@@ -152,11 +223,63 @@ mod tests {
     /// A program with only a `main` function, whose body is `body`.
     fn main_with_body(body: Vec<ast::Statement>) -> ast::Program {
         ast::Program {
-            functions: vec![ast::Function {
-                name: "main".to_string(),
-                body,
-            }],
+            functions: vec![ast_function("main", body)],
         }
+    }
+
+    /// An AST function named `name` with the body `body`, whose header does not give places.
+    fn ast_function(name: &str, body: Vec<ast::Statement>) -> ast::Function {
+        ast::Function {
+            name: name.to_string(),
+            place_parameters: vec![],
+            places: None,
+            body,
+        }
+    }
+
+    /// An empty AST function named `name`, with the place parameters `place_parameters`
+    /// and the places `places`, as written in its header.
+    fn ast_function_with_places(
+        name: &str,
+        place_parameters: &[&str],
+        places: Option<&[&str]>,
+    ) -> ast::Function {
+        let to_strings = |names: &[&str]| names.iter().map(|name| name.to_string()).collect();
+        ast::Function {
+            name: name.to_string(),
+            place_parameters: to_strings(place_parameters),
+            places: places.map(to_strings),
+            body: vec![],
+        }
+    }
+
+    /// Resolves a program with an empty `main` and the function `function`.
+    fn resolve_with(function: ast::Function) -> Result<resolved_ast::Program, ResolveError> {
+        resolve(ast::Program {
+            functions: vec![ast_function("main", vec![]), function],
+        })
+    }
+
+    /// Resolves a program with an empty `main` and the function `f`, as in [`ast_function_with_places`].
+    /// Returns the places `f` runs on.
+    fn places_of_f(
+        place_parameters: &[&str],
+        places: Option<&[&str]>,
+    ) -> Result<Vec<Place>, ResolveError> {
+        let function = ast_function_with_places("f", place_parameters, places);
+        Ok(resolve_with(function)?.functions()[1].places().to_vec())
+    }
+
+    /// Resolves a program whose only function is `main`.
+    fn resolve_main(main: ast::Function) -> Result<resolved_ast::Program, ResolveError> {
+        resolve(ast::Program {
+            functions: vec![main],
+        })
+    }
+
+    /// A resolved place parameter.
+    fn parameter(index: usize) -> Place {
+        Place::Parameter(PlaceParameterId(index))
     }
 
     /// Resolves `program` and returns the id of its `main` function.
@@ -240,6 +363,8 @@ mod tests {
             program.function(program.main()),
             &resolved_ast::Function::new(
                 "main".to_string(),
+                vec![],
+                vec![Place::Host],
                 vec![resolved_ast::Statement::Print(
                     resolved_ast::Expression::Integer(42)
                 )],
@@ -372,14 +497,8 @@ mod tests {
     fn variables_of_another_function_are_unknown() {
         let program = ast::Program {
             functions: vec![
-                ast::Function {
-                    name: "helper".to_string(),
-                    body: vec![ast_let("x", ast::Expression::Integer(1))],
-                },
-                ast::Function {
-                    name: "main".to_string(),
-                    body: vec![ast_print_variable("x")],
-                },
+                ast_function("helper", vec![ast_let("x", ast::Expression::Integer(1))]),
+                ast_function("main", vec![ast_print_variable("x")]),
             ],
         };
         assert_eq!(
@@ -416,6 +535,101 @@ mod tests {
         assert_eq!(
             program.function(program.main()).variable_names(),
             ["x", "y", "x"]
+        );
+    }
+
+    #[test]
+    fn function_without_places_runs_on_host() {
+        assert_eq!(places_of_f(&[], None), Ok(vec![Place::Host]));
+    }
+
+    #[test]
+    fn host_is_a_built_in_place() {
+        assert_eq!(places_of_f(&[], Some(&["host"])), Ok(vec![Place::Host]));
+    }
+
+    #[test]
+    fn places_refer_to_place_parameters() {
+        assert_eq!(
+            places_of_f(&["a", "b"], Some(&["b", "a"])),
+            Ok(vec![parameter(1), parameter(0)])
+        );
+    }
+
+    #[test]
+    fn function_can_run_on_host_and_a_place_parameter() {
+        assert_eq!(
+            places_of_f(&["a"], Some(&["host", "a"])),
+            Ok(vec![Place::Host, parameter(0)])
+        );
+    }
+
+    #[test]
+    fn function_with_place_parameters_and_without_places_runs_on_host() {
+        assert_eq!(places_of_f(&["a"], None), Ok(vec![Place::Host]));
+    }
+
+    #[test]
+    fn place_parameter_named_host_hides_the_built_in_place() {
+        assert_eq!(
+            places_of_f(&["host"], Some(&["host"])),
+            Ok(vec![parameter(0)])
+        );
+    }
+
+    #[test]
+    fn place_parameter_names_are_kept() {
+        let function = ast_function_with_places("f", &["a", "b"], Some(&["a"]));
+        let program = resolve_with(function).expect("the program should be valid");
+        assert_eq!(program.functions()[1].place_parameter_names(), ["a", "b"]);
+    }
+
+    #[test]
+    fn unknown_place_is_an_error() {
+        assert_eq!(
+            places_of_f(&["a"], Some(&["b"])),
+            Err(ResolveError::UnknownPlace("b".to_string()))
+        );
+    }
+
+    #[test]
+    fn duplicate_place_parameter_is_an_error() {
+        assert_eq!(
+            places_of_f(&["a", "a"], Some(&["a"])),
+            Err(ResolveError::DuplicatePlaceParameter("a".to_string()))
+        );
+    }
+
+    #[test]
+    fn place_listed_twice_is_an_error() {
+        assert_eq!(
+            places_of_f(&["a"], Some(&["a", "a"])),
+            Err(ResolveError::DuplicatePlace("a".to_string()))
+        );
+    }
+
+    #[test]
+    fn main_can_be_written_on_host() {
+        let main = ast_function_with_places("main", &[], Some(&["host"]));
+        let program = resolve_main(main).expect("the program should be valid");
+        assert_eq!(program.function(program.main()).places(), [Place::Host]);
+    }
+
+    #[test]
+    fn main_with_place_parameters_is_an_error() {
+        let main = ast_function_with_places("main", &["a"], Some(&["a"]));
+        assert_eq!(
+            resolve_main(main).err(),
+            Some(ResolveError::MainWithPlaceParameters)
+        );
+    }
+
+    #[test]
+    fn main_with_place_parameters_is_an_error_even_on_host() {
+        let main = ast_function_with_places("main", &["a"], None);
+        assert_eq!(
+            resolve_main(main).err(),
+            Some(ResolveError::MainWithPlaceParameters)
         );
     }
 }

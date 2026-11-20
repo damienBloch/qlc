@@ -4,6 +4,7 @@
 //! function names are unique, the `main` function exists,
 //! and each variable is defined before it is used.
 //! Variables are referred to by a [`VariableId`] instead of their name.
+//! Places are referred to by a [`Place`] instead of their name.
 //!
 //! The body of each function follows these rules about variables:
 //!
@@ -49,20 +50,43 @@ impl Program {
 }
 
 /// A function whose body follows the rules about variables of the module documentation.
+///
+/// The places it runs on follow these rules:
+///
+/// 1. there is at least one place;
+/// 2. no place is listed twice;
+/// 3. each [`PlaceParameterId`] is smaller than the number of place parameters.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Function {
     name: String,
+    /// The name of each place parameter, without the `@`, indexed by its [`PlaceParameterId`].
+    place_parameter_names: Vec<String>,
+    /// The places the function runs on.
+    places: Vec<Place>,
     body: Vec<Statement>,
+    /// The name of each variable, indexed by its [`VariableId`].
+    /// Several variables can have the same name.
     variable_names: Vec<String>,
 }
 
 impl Function {
-    /// Creates a function whose variables have the names `variable_names`.
-    /// Panics if `body` does not follow the rules about variables of the module documentation.
-    pub fn new(name: String, body: Vec<Statement>, variable_names: Vec<String>) -> Self {
+    /// Creates a function whose place parameters have the names `place_parameter_names`,
+    /// which runs on `places`, and whose variables have the names `variable_names`.
+    /// Panics if `places` does not follow the rules of [`Function`],
+    /// or if `body` does not follow the rules about variables of the module documentation.
+    pub fn new(
+        name: String,
+        place_parameter_names: Vec<String>,
+        places: Vec<Place>,
+        body: Vec<Statement>,
+        variable_names: Vec<String>,
+    ) -> Self {
+        check_places(&places, place_parameter_names.len());
         check_variables(&body, variable_names.len());
         Function {
             name,
+            place_parameter_names,
+            places,
             body,
             variable_names,
         }
@@ -70,6 +94,16 @@ impl Function {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// The name of each place parameter of the function, indexed by its [`PlaceParameterId`].
+    pub fn place_parameter_names(&self) -> &[String] {
+        &self.place_parameter_names
+    }
+
+    /// The places the function runs on.
+    pub fn places(&self) -> &[Place] {
+        &self.places
     }
 
     pub fn body(&self) -> &[Statement] {
@@ -88,6 +122,7 @@ impl Function {
     }
 
     /// Returns the name, the body and the names of the variables of the function.
+    /// The places are not returned.
     pub fn into_parts(self) -> (String, Vec<Statement>, Vec<String>) {
         (self.name, self.body, self.variable_names)
     }
@@ -116,6 +151,19 @@ pub enum Expression {
     NewSimDevice,
 }
 
+/// A place that a function runs on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Place {
+    /// The built-in place of the computer that runs qlc.
+    Host,
+    /// A place parameter of the function.
+    Parameter(PlaceParameterId),
+}
+
+/// The index of a place parameter in the place parameters of its function.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlaceParameterId(pub usize);
+
 /// The index of a function in the functions of a program.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FunctionId(pub usize);
@@ -123,6 +171,27 @@ pub struct FunctionId(pub usize);
 /// The index of a variable in the variables of its function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VariableId(pub usize);
+
+/// Panics if `places` does not follow the rules of [`Function`].
+/// `place_parameter_count` is the number of place parameters of the function.
+fn check_places(places: &[Place], place_parameter_count: usize) {
+    assert!(
+        !places.is_empty(),
+        "a function should run on at least one place"
+    );
+    for (index, place) in places.iter().enumerate() {
+        assert!(
+            !places[..index].contains(place),
+            "a function should not run twice on the same place"
+        );
+        if let Place::Parameter(parameter) = place {
+            assert!(
+                parameter.0 < place_parameter_count,
+                "place parameter id should be smaller than the number of place parameters"
+            );
+        }
+    }
+}
 
 /// Panics if `body` does not follow the rules about variables of the module documentation.
 /// `variable_count` is the number of variables of the function.
@@ -168,10 +237,57 @@ const VARIABLE_ID_IN_RANGE: &str = "variable id should have a name in `variable_
 mod tests {
     use super::*;
 
-    /// A function named `main` with the body `body` and `variable_count` variables.
+    /// A function named `main` that runs on the host, with the body `body` and `variable_count` variables.
     fn function(body: Vec<Statement>, variable_count: usize) -> Function {
         let variable_names = (0..variable_count).map(|i| format!("v{i}")).collect();
-        Function::new("main".to_string(), body, variable_names)
+        Function::new(
+            "main".to_string(),
+            vec![],
+            vec![Place::Host],
+            body,
+            variable_names,
+        )
+    }
+
+    /// An empty function with `place_parameter_count` place parameters, which runs on `places`.
+    fn function_on_places(place_parameter_count: usize, places: Vec<Place>) -> Function {
+        let place_parameter_names = (0..place_parameter_count)
+            .map(|i| format!("p{i}"))
+            .collect();
+        Function::new(
+            "f".to_string(),
+            place_parameter_names,
+            places,
+            vec![],
+            vec![],
+        )
+    }
+
+    #[test]
+    fn function_on_the_host_and_a_place_parameter_is_created() {
+        let places = vec![Place::Host, Place::Parameter(PlaceParameterId(0))];
+        assert_eq!(function_on_places(1, places.clone()).places(), places);
+    }
+
+    #[test]
+    #[should_panic(expected = "a function should run on at least one place")]
+    fn function_without_places_panics() {
+        function_on_places(0, vec![]);
+    }
+
+    #[test]
+    #[should_panic(expected = "a function should not run twice on the same place")]
+    fn function_on_the_same_place_twice_panics() {
+        let parameter = Place::Parameter(PlaceParameterId(0));
+        function_on_places(1, vec![parameter, parameter]);
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "place parameter id should be smaller than the number of place parameters"
+    )]
+    fn place_parameter_out_of_range_panics() {
+        function_on_places(1, vec![Place::Parameter(PlaceParameterId(1))]);
     }
 
     /// A statement that sets `variable` to the integer `value`.

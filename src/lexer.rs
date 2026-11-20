@@ -25,6 +25,11 @@ pub enum Token {
     CloseBrace,
     Semicolon,
     Equals,
+    /// `@`, which comes before the name of a place.
+    At,
+    OpenBracket,
+    CloseBracket,
+    Comma,
 }
 
 impl fmt::Display for Token {
@@ -43,6 +48,10 @@ impl fmt::Display for Token {
             Token::CloseBrace => write!(f, "`}}`"),
             Token::Semicolon => write!(f, "`;`"),
             Token::Equals => write!(f, "`=`"),
+            Token::At => write!(f, "`@`"),
+            Token::OpenBracket => write!(f, "`[`"),
+            Token::CloseBracket => write!(f, "`]`"),
+            Token::Comma => write!(f, "`,`"),
         }
     }
 }
@@ -100,6 +109,10 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, LexError> {
                 '}' => Token::CloseBrace,
                 ';' => Token::Semicolon,
                 '=' => Token::Equals,
+                '@' => Token::At,
+                '[' => Token::OpenBracket,
+                ']' => Token::CloseBracket,
+                ',' => Token::Comma,
                 _ => return Err(LexError::UnexpectedCharacter(c)),
             };
             tokens.push(token);
@@ -268,6 +281,30 @@ mod tests {
     #[test]
     fn semicolon() {
         assert_eq!(tokenize("x;"), Ok(vec![identifier("x"), Token::Semicolon]));
+    }
+
+    #[test]
+    fn function_header_with_places() {
+        assert_eq!(
+            tokenize("fn f[@a, @b]@(a, b)"),
+            Ok(vec![
+                Token::Fn,
+                identifier("f"),
+                Token::OpenBracket,
+                Token::At,
+                identifier("a"),
+                Token::Comma,
+                Token::At,
+                identifier("b"),
+                Token::CloseBracket,
+                Token::At,
+                Token::OpenParen,
+                identifier("a"),
+                Token::Comma,
+                identifier("b"),
+                Token::CloseParen,
+            ])
+        );
     }
 
     #[test]

@@ -152,3 +152,28 @@ fn missing_file() {
     assert_eq!(output.status.code(), Some(1));
     assert!(stderr(&output).starts_with("error: cannot read"));
 }
+
+#[test]
+fn main_written_on_host() {
+    assert_success(&run_program("main_on_host.ql"), "1\n");
+}
+
+#[test]
+fn unknown_place() {
+    assert_error(&run_program("unknown_place.ql"), "unknown place `@b`");
+}
+
+#[test]
+fn main_with_place_parameters() {
+    assert_error(
+        &run_program("main_with_place_parameters.ql"),
+        "the `main` function cannot have place parameters",
+    );
+}
+
+#[test]
+// Expected to fail until functions on places are supported.
+#[should_panic(expected = "which is not supported yet")]
+fn function_on_places() {
+    assert_success(&run_program("function_on_places.ql"), "");
+}
