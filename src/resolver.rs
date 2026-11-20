@@ -10,6 +10,8 @@
 //! or else to the built-in place `host`. So a place parameter named `host` hides the built-in place.
 //! A function whose header does not give its places runs on the built-in place `host`.
 //! The `main` function has no place parameters, so it runs on `host` only.
+//! In `thread(f@a)`, `f` is a function of the program and `a` is a place `f` runs on,
+//! so the place name is resolved in the header of `f`, not in the enclosing function.
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -22,6 +24,12 @@ pub enum ResolveError {
     MissingMain,
     DuplicateFunction(String),
     UnknownVariable(String),
+    UnknownFunction(String),
+    /// The function named `function` does not run on the place named `place`.
+    FunctionDoesNotRunOnPlace {
+        function: String,
+        place: String,
+    },
     /// Two place parameters of a function have this name.
     DuplicatePlaceParameter(String),
     UnknownPlace(String),
@@ -38,6 +46,10 @@ impl fmt::Display for ResolveError {
                 write!(f, "function `{name}` is defined more than once")
             }
             ResolveError::UnknownVariable(name) => write!(f, "unknown variable `{name}`"),
+            ResolveError::UnknownFunction(name) => write!(f, "unknown function `{name}`"),
+            ResolveError::FunctionDoesNotRunOnPlace { function, place } => {
+                write!(f, "function `{function}` does not run on place `@{place}`")
+            }
             ResolveError::DuplicatePlaceParameter(name) => {
                 write!(f, "place parameter `@{name}` is declared more than once")
             }
@@ -63,12 +75,21 @@ pub fn resolve(program: ast::Program) -> Result<resolved_ast::Program, ResolveEr
     if !program.functions[main].place_parameters.is_empty() {
         return Err(ResolveError::MainWithPlaceParameters);
     }
-    let functions = program
+    // The places of every function are resolved first,
+    // so that a body can refer to the part of any function on any of its places.
+    let all_places = program
+        .functions
+        .iter()
+        .map(resolve_function_places)
+        .collect::<Result<Vec<_>, _>>()?;
+    let functions = Functions::new(&program.functions, all_places);
+    let resolved = program
         .functions
         .into_iter()
-        .map(resolve_function)
+        .enumerate()
+        .map(|(index, function)| resolve_function(function, &functions, FunctionId(index)))
         .collect::<Result<_, _>>()?;
-    Ok(resolved_ast::Program::new(functions, FunctionId(main)))
+    Ok(resolved_ast::Program::new(resolved, FunctionId(main)))
 }
 
 fn check_no_duplicate_functions(program: &ast::Program) -> Result<(), ResolveError> {
@@ -81,22 +102,35 @@ fn check_no_duplicate_functions(program: &ast::Program) -> Result<(), ResolveErr
     Ok(())
 }
 
-fn resolve_function(function: ast::Function) -> Result<resolved_ast::Function, ResolveError> {
+/// Resolves the places in the header of `function`.
+fn resolve_function_places(function: &ast::Function) -> Result<FunctionPlaces, ResolveError> {
     check_no_duplicate_place_parameters(&function.place_parameters)?;
     let run_on = match &function.places {
         Some(names) => resolve_places(names, &function.place_parameters)?,
         None => vec![Place::Host],
     };
-    let places = FunctionPlaces::new(function.place_parameters, run_on);
+    Ok(FunctionPlaces::new(
+        function.place_parameters.clone(),
+        run_on,
+    ))
+}
+
+/// Resolves the body of `function`, whose id is `id`.
+/// `functions` contains the places of every function of the program.
+fn resolve_function(
+    function: ast::Function,
+    functions: &Functions,
+    id: FunctionId,
+) -> Result<resolved_ast::Function, ResolveError> {
     let mut variables = Variables::default();
     let body = function
         .body
         .into_iter()
-        .map(|statement| resolve_statement(statement, &mut variables))
+        .map(|statement| resolve_statement(statement, &mut variables, functions))
         .collect::<Result<_, _>>()?;
     Ok(resolved_ast::Function::new(
         function.name,
-        places,
+        functions.places(id).clone(),
         body,
         variables.names,
     ))
@@ -145,21 +179,26 @@ fn resolve_place(name: &str, place_parameters: &[String]) -> Result<Place, Resol
 }
 
 /// Resolves `statement`. `variables` contains the variables defined before it in its function.
+/// `functions` contains the places of every function of the program.
 fn resolve_statement(
     statement: ast::Statement,
     variables: &mut Variables,
+    functions: &Functions,
 ) -> Result<resolved_ast::Statement, ResolveError> {
     match statement {
         ast::Statement::Print(value) => Ok(resolved_ast::Statement::Print(resolve_expression(
-            value, variables,
+            value, variables, functions,
         )?)),
         ast::Statement::Delete(value) => Ok(resolved_ast::Statement::Delete(resolve_expression(
-            value, variables,
+            value, variables, functions,
+        )?)),
+        ast::Statement::Join(value) => Ok(resolved_ast::Statement::Join(resolve_expression(
+            value, variables, functions,
         )?)),
         ast::Statement::Let { name, value } => {
             // The value is resolved before the variable is defined,
             // so in `let x = x;` the value refers to the previous `x`.
-            let value = resolve_expression(value, variables)?;
+            let value = resolve_expression(value, variables, functions)?;
             let variable = variables.define(name);
             Ok(resolved_ast::Statement::Let { variable, value })
         }
@@ -167,9 +206,11 @@ fn resolve_statement(
 }
 
 /// Resolves `expression`. `variables` contains the variables defined before it in its function.
+/// `functions` contains the places of every function of the program.
 fn resolve_expression(
     expression: ast::Expression,
     variables: &Variables,
+    functions: &Functions,
 ) -> Result<resolved_ast::Expression, ResolveError> {
     match expression {
         ast::Expression::Integer(value) => Ok(resolved_ast::Expression::Integer(value)),
@@ -178,6 +219,60 @@ fn resolve_expression(
             Some(variable) => Ok(resolved_ast::Expression::Variable(variable)),
             None => Err(ResolveError::UnknownVariable(name)),
         },
+        ast::Expression::NewThread { function, place } => {
+            let (function, place) = functions.lookup_part(&function, &place)?;
+            Ok(resolved_ast::Expression::NewThread { function, place })
+        }
+    }
+}
+
+/// The places of every function of the program, by name and by id.
+struct Functions {
+    ids_by_name: HashMap<String, FunctionId>,
+    /// The places of each function, indexed by its [`FunctionId`].
+    places: Vec<FunctionPlaces>,
+}
+
+impl Functions {
+    /// Creates the places of the functions `functions`, whose places are `places`.
+    fn new(functions: &[ast::Function], places: Vec<FunctionPlaces>) -> Self {
+        let ids_by_name = functions
+            .iter()
+            .enumerate()
+            .map(|(index, function)| (function.name.clone(), FunctionId(index)))
+            .collect();
+        Functions {
+            ids_by_name,
+            places,
+        }
+    }
+
+    /// The places of the function `id`.
+    fn places(&self, id: FunctionId) -> &FunctionPlaces {
+        self.places
+            .get(id.0)
+            .expect("a function id should refer to a function of the program")
+    }
+
+    /// Resolves the part of the function named `function_name` on the place named `place_name`.
+    fn lookup_part(
+        &self,
+        function_name: &str,
+        place_name: &str,
+    ) -> Result<(FunctionId, Place), ResolveError> {
+        let id = *self
+            .ids_by_name
+            .get(function_name)
+            .ok_or_else(|| ResolveError::UnknownFunction(function_name.to_string()))?;
+        let places = self.places(id);
+        let place = resolve_place(place_name, places.parameter_names())?;
+        if !places.run_on().contains(&place) {
+            return Err(ResolveError::FunctionDoesNotRunOnPlace {
+                function: function_name.to_string(),
+                place: place_name.to_string(),
+            });
+        }
+        Ok((id, place))
     }
 }
 
@@ -330,6 +425,81 @@ mod tests {
     /// A resolved statement that prints `variable`.
     fn resolved_print_variable(variable: usize) -> resolved_ast::Statement {
         resolved_ast::Statement::Print(resolved_ast::Expression::Variable(VariableId(variable)))
+    }
+
+    /// A program with a `main` function with the body `body`,
+    /// and a function `work` that runs on its place parameter `a`.
+    fn program_with_work(body: Vec<ast::Statement>) -> ast::Program {
+        ast::Program {
+            functions: vec![
+                ast_function("main", body),
+                ast_function_with_places("work", &["a"], Some(&["a"])),
+            ],
+        }
+    }
+
+    /// An AST expression that creates a thread for the part of `function` on `place`.
+    fn ast_thread(function: &str, place: &str) -> ast::Expression {
+        ast::Expression::NewThread {
+            function: function.to_string(),
+            place: place.to_string(),
+        }
+    }
+
+    /// Returns the error found when resolving a program as in [`program_with_work`].
+    fn work_body_error(body: Vec<ast::Statement>) -> ResolveError {
+        resolve(program_with_work(body))
+            .err()
+            .expect("the program should be invalid")
+    }
+
+    #[test]
+    fn thread_refers_to_a_function_defined_later() {
+        let body = vec![
+            ast_let("t", ast_thread("work", "a")),
+            ast::Statement::Join(ast::Expression::Variable("t".to_string())),
+        ];
+        let program = resolve(program_with_work(body)).expect("the program should be valid");
+        assert_eq!(
+            program.function(program.main()).body(),
+            [
+                resolved_ast::Statement::Let {
+                    variable: VariableId(0),
+                    value: resolved_ast::Expression::NewThread {
+                        function: FunctionId(1),
+                        place: parameter(0),
+                    },
+                },
+                resolved_ast::Statement::Join(resolved_ast::Expression::Variable(VariableId(0))),
+            ]
+        );
+    }
+
+    #[test]
+    fn thread_of_an_unknown_function_is_an_error() {
+        assert_eq!(
+            work_body_error(vec![ast_let("t", ast_thread("other", "a"))]),
+            ResolveError::UnknownFunction("other".to_string())
+        );
+    }
+
+    #[test]
+    fn thread_on_an_unknown_place_is_an_error() {
+        assert_eq!(
+            work_body_error(vec![ast_let("t", ast_thread("work", "z"))]),
+            ResolveError::UnknownPlace("z".to_string())
+        );
+    }
+
+    #[test]
+    fn thread_on_a_place_the_function_does_not_run_on_is_an_error() {
+        assert_eq!(
+            work_body_error(vec![ast_let("t", ast_thread("work", "host"))]),
+            ResolveError::FunctionDoesNotRunOnPlace {
+                function: "work".to_string(),
+                place: "host".to_string(),
+            }
+        );
     }
 
     #[test]

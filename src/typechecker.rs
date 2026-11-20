@@ -2,7 +2,8 @@
 //! and returns the typed AST.
 //!
 //! The type of a variable is the type of the value of its `let`.
-//! `print` only accepts an `Int`, and `delete` only accepts a `SimDevice`.
+//! `print` only accepts an `Int`, `delete` only accepts a `SimDevice`
+//! and `join` only accepts a `Thread`.
 
 use std::fmt;
 
@@ -67,23 +68,18 @@ fn check_statement(
     match statement {
         resolved_ast::Statement::Print(value) => {
             let (value, value_type) = check_expression(value, variable_types);
-            match value_type {
-                Type::Int => Ok(typed_ast::Statement::Print(value)),
-                Type::SimDevice => Err(TypeError::Mismatch {
-                    expected: Type::Int,
-                    found: value_type,
-                }),
-            }
+            expect_type(value_type, Type::Int)?;
+            Ok(typed_ast::Statement::Print(value))
         }
         resolved_ast::Statement::Delete(value) => {
             let (value, value_type) = check_expression(value, variable_types);
-            match value_type {
-                Type::SimDevice => Ok(typed_ast::Statement::Delete(value)),
-                Type::Int => Err(TypeError::Mismatch {
-                    expected: Type::SimDevice,
-                    found: value_type,
-                }),
-            }
+            expect_type(value_type, Type::SimDevice)?;
+            Ok(typed_ast::Statement::Delete(value))
+        }
+        resolved_ast::Statement::Join(value) => {
+            let (value, value_type) = check_expression(value, variable_types);
+            expect_type(value_type, Type::Thread)?;
+            Ok(typed_ast::Statement::Join(value))
         }
         resolved_ast::Statement::Let { variable, value } => {
             let (value, value_type) = check_expression(value, variable_types);
@@ -92,6 +88,15 @@ fn check_statement(
                 .expect(VARIABLE_ID_IN_RANGE) = Some(value_type);
             Ok(typed_ast::Statement::Let { variable, value })
         }
+    }
+}
+
+/// Checks that `found` is the type `expected`.
+fn expect_type(found: Type, expected: Type) -> Result<(), TypeError> {
+    if found == expected {
+        Ok(())
+    } else {
+        Err(TypeError::Mismatch { expected, found })
     }
 }
 
@@ -109,6 +114,10 @@ fn check_expression(
         resolved_ast::Expression::NewSimDevice => {
             (typed_ast::Expression::NewSimDevice, Type::SimDevice)
         }
+        resolved_ast::Expression::NewThread { function, place } => (
+            typed_ast::Expression::NewThread { function, place },
+            Type::Thread,
+        ),
         resolved_ast::Expression::Variable(variable) => (
             typed_ast::Expression::Variable(variable),
             variable_types
@@ -205,6 +214,67 @@ mod tests {
     /// A resolved statement that prints `variable`.
     fn print_variable(variable: usize) -> resolved_ast::Statement {
         resolved_ast::Statement::Print(resolved_ast::Expression::Variable(VariableId(variable)))
+    }
+
+    /// Checks a program with a `main` function with the body `body` and `variable_count` variables,
+    /// and a function `work`, whose id is [`WORK`], that runs on its place parameter `a`.
+    fn check_main_with_work(
+        body: Vec<resolved_ast::Statement>,
+        variable_count: usize,
+    ) -> Result<typed_ast::Program, TypeError> {
+        let variable_names = (0..variable_count).map(|i| format!("v{i}")).collect();
+        let main = host_function("main", body, variable_names);
+        let work = resolved_ast::Function::new(
+            "work".to_string(),
+            FunctionPlaces::new(
+                vec!["a".to_string()],
+                vec![Place::Parameter(PlaceParameterId(0))],
+            ),
+            vec![],
+            vec![],
+        );
+        check(resolved_ast::Program::new(vec![main, work], FunctionId(0)))
+    }
+
+    /// The id of the `work` function of [`check_main_with_work`].
+    const WORK: FunctionId = FunctionId(1);
+
+    /// A resolved statement that sets `variable` to a thread
+    /// that runs the part of `work` on its place parameter `a`.
+    fn let_thread(variable: usize) -> resolved_ast::Statement {
+        resolved_ast::Statement::Let {
+            variable: VariableId(variable),
+            value: resolved_ast::Expression::NewThread {
+                function: WORK,
+                place: Place::Parameter(PlaceParameterId(0)),
+            },
+        }
+    }
+
+    #[test]
+    fn thread_has_the_thread_type_and_is_joined() {
+        let body = vec![
+            let_thread(0),
+            resolved_ast::Statement::Join(resolved_ast::Expression::Variable(VariableId(0))),
+        ];
+        let program = check_main_with_work(body, 1).expect("the program should have no type error");
+        assert_eq!(main_variable_types(&program), [Type::Thread]);
+    }
+
+    #[test]
+    fn join_of_an_integer_is_an_error() {
+        let body = vec![resolved_ast::Statement::Join(
+            resolved_ast::Expression::Integer(1),
+        )];
+        assert_eq!(
+            check_main_with_work(body, 0)
+                .err()
+                .expect("the program should have a type error"),
+            TypeError::Mismatch {
+                expected: Type::Thread,
+                found: Type::Int,
+            }
+        );
     }
 
     #[test]

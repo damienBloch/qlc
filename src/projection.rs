@@ -29,6 +29,7 @@ fn project_statement(statement: &Statement) -> parts_ir::Statement {
     match statement {
         Statement::Print(value) => parts_ir::Statement::Print(project_expression(value)),
         Statement::Delete(value) => parts_ir::Statement::Delete(project_expression(value)),
+        Statement::Join(value) => parts_ir::Statement::Join(project_expression(value)),
         Statement::Let { variable, value } => parts_ir::Statement::Let {
             variable: *variable,
             value: project_expression(value),
@@ -41,6 +42,10 @@ fn project_expression(expression: &Expression) -> parts_ir::Expression {
         Expression::Integer(value) => parts_ir::Expression::Integer(*value),
         Expression::Variable(variable) => parts_ir::Expression::Variable(*variable),
         Expression::NewSimDevice => parts_ir::Expression::NewSimDevice,
+        Expression::NewThread { function, place } => parts_ir::Expression::NewThread {
+            function: *function,
+            place: *place,
+        },
     }
 }
 

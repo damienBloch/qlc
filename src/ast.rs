@@ -30,6 +30,8 @@ pub enum Statement {
     Print(Expression),
     /// Deletes the device that is the value of an expression.
     Delete(Expression),
+    /// Waits for the thread that is the value of an expression.
+    Join(Expression),
     /// Defines a variable named `name` and sets it to the value of `value`.
     Let { name: String, value: Expression },
 }
@@ -42,4 +44,6 @@ pub enum Expression {
     Variable(String),
     /// Creates a simulated device.
     NewSimDevice,
+    /// Creates a thread that runs the part of the function named `function` on the place named `place`.
+    NewThread { function: String, place: String },
 }

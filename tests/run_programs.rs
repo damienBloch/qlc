@@ -183,3 +183,66 @@ fn sim_device_on_several_places() {
         "function `hello` runs on several places, so it cannot use a value of type `SimDevice`, which cannot be copied",
     );
 }
+
+#[test]
+fn thread_prints_when_it_is_joined() {
+    assert_success(&run_program("thread_prints_after_join.ql"), "2\n1\n");
+}
+
+#[test]
+fn two_threads_run_two_parts_of_one_function() {
+    assert_success(&run_program("two_threads.ql"), "1\n1\n");
+}
+
+#[test]
+fn thread_can_use_a_sim_device() {
+    assert_success(&run_program("thread_with_a_sim_device.ql"), "7\n");
+}
+
+#[test]
+fn thread_not_joined() {
+    assert_error(
+        &run_program("thread_not_joined.ql"),
+        "the value of variable `t` is never used",
+    );
+}
+
+#[test]
+fn thread_joined_twice() {
+    assert_error(
+        &run_program("join_twice.ql"),
+        "variable `t` is used after its value is moved",
+    );
+}
+
+#[test]
+fn thread_of_unknown_function() {
+    assert_error(
+        &run_program("thread_of_unknown_function.ql"),
+        "unknown function `work`",
+    );
+}
+
+#[test]
+fn thread_on_a_place_the_function_does_not_run_on() {
+    assert_error(
+        &run_program("thread_on_an_unused_place.ql"),
+        "function `work` does not run on place `@b`",
+    );
+}
+
+#[test]
+fn thread_of_a_host_function() {
+    assert_error(
+        &run_program("thread_of_a_host_function.ql"),
+        "a thread cannot run the part of function `work` on the host",
+    );
+}
+
+#[test]
+fn thread_created_outside_the_host() {
+    assert_error(
+        &run_program("thread_outside_the_host.ql"),
+        "function `spawner` does not run on the host, so it cannot create a thread",
+    );
+}

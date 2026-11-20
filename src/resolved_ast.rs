@@ -11,6 +11,9 @@
 //! 1. each [`VariableId`] is smaller than the number of variables of the function;
 //! 2. each variable is set by exactly one `let`;
 //! 3. each variable is set before it is read.
+//!
+//! A [`Place`] in a [`Expression::NewThread`] refers to the header of the function it names,
+//! not to the function that contains the expression.
 
 pub struct Program {
     functions: Vec<Function>,
@@ -113,6 +116,8 @@ pub enum Statement {
     Print(Expression),
     /// Deletes the device that is the value of an expression.
     Delete(Expression),
+    /// Waits for the thread that is the value of an expression.
+    Join(Expression),
     /// Sets `variable` to the value of `value`.
     Let {
         variable: VariableId,
@@ -128,6 +133,12 @@ pub enum Expression {
     Variable(VariableId),
     /// Creates a simulated device.
     NewSimDevice,
+    /// Creates a thread that runs the part of `function` on `place`.
+    ///
+    /// `place` is one of the places `function` runs on,
+    /// so a [`PlaceParameterId`] in it is a place parameter of `function`,
+    /// not of the function that contains the expression.
+    NewThread { function: FunctionId, place: Place },
 }
 
 /// The place parameters of a function and the places it runs on.
@@ -213,7 +224,7 @@ fn check_variables(body: &[Statement], variable_count: usize) {
     let mut is_set = vec![false; variable_count];
     for statement in body {
         match statement {
-            Statement::Print(value) | Statement::Delete(value) => {
+            Statement::Print(value) | Statement::Delete(value) | Statement::Join(value) => {
                 check_variables_read(value, &is_set)
             }
             Statement::Let { variable, value } => {
@@ -237,7 +248,7 @@ fn check_variables(body: &[Statement], variable_count: usize) {
 /// `is_set` tells, for each variable, whether it is set.
 fn check_variables_read(expression: &Expression, is_set: &[bool]) {
     match expression {
-        Expression::Integer(_) | Expression::NewSimDevice => {}
+        Expression::Integer(_) | Expression::NewSimDevice | Expression::NewThread { .. } => {}
         Expression::Variable(variable) => assert!(
             *is_set.get(variable.0).expect(VARIABLE_ID_IN_RANGE),
             "a variable should be set before it is read"

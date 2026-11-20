@@ -46,6 +46,7 @@ fn check_function(function: &Function) -> Result<(), LinearityError> {
         match statement {
             Statement::Print(value)
             | Statement::Delete(value)
+            | Statement::Join(value)
             | Statement::Let { variable: _, value } => {
                 check_expression(value, function, &mut is_moved)?
             }
@@ -72,7 +73,7 @@ fn check_expression(
     is_moved: &mut [bool],
 ) -> Result<(), LinearityError> {
     match expression {
-        Expression::Integer(_) | Expression::NewSimDevice => Ok(()),
+        Expression::Integer(_) | Expression::NewSimDevice | Expression::NewThread { .. } => Ok(()),
         Expression::Variable(variable) => {
             let variable_info = function
                 .variables()

@@ -44,6 +44,8 @@ The resolver checks the names of the program: function names must be unique,
 there must be a `main` function, and each variable must be defined before it is used.
 It also resolves the places of each function header: each place is the built-in `host`
 or a place parameter of the function, referred to by a `PlaceParameterId`.
+It resolves the headers of every function before it resolves any body,
+because `thread(f@a)` names a place in the header of `f`.
 The place parameters of a function and the places it runs on are stored together in a `FunctionPlaces`.
 The resolved AST stores which function is `main`.
 It refers to each variable by a `VariableId`, its index in its function, instead of its name.
@@ -58,13 +60,14 @@ The types are in `src/types.rs`. Each type has a kind:
 - `Data`: a value that can be copied and dropped.
 - `Resource`: a value that must be used exactly once. It cannot be copied or dropped.
 
-There are two types:
+There are three types:
 
 - `Int`, a 64-bit signed integer, of kind `Data`;
-- `SimDevice`, a simulated device, of kind `Resource`.
+- `SimDevice`, a simulated device, of kind `Resource`;
+- `Thread`, a thread that runs one part of a function, of kind `Resource`.
 
-The type checker checks that `print` gets an `Int` and `delete` gets a `SimDevice`.
-Otherwise it reports a `TypeError::Mismatch`.
+The type checker checks that `print` gets an `Int`, `delete` gets a `SimDevice`
+and `join` gets a `Thread`. Otherwise it reports a `TypeError::Mismatch`.
 
 The linearity checker checks how resources are used. It only reads the typed AST.
 Reading a variable whose type is of kind `Resource` moves its value,
@@ -74,6 +77,7 @@ Otherwise the linearity checker reports a `LinearityError::UseAfterMove`.
 The value of each such variable must be moved before the end of its function.
 Otherwise the linearity checker reports a `LinearityError::ValueNotUsed`.
 So each resource is used exactly once.
+A `Thread` is a resource, so each thread is joined exactly once with no rule of its own.
 It is a separate stage from the type checker, so that its algorithm can change
 without changing the type checker. For example, branches will need a flow analysis.
 
@@ -82,6 +86,9 @@ Today every value of a function is known by every place the function runs on.
 A function that runs on several places cannot use a value of kind `Resource`,
 because such a value cannot be copied to each place.
 Otherwise the place checker reports a `PlaceError::ResourceOnSeveralPlaces`.
+It also checks the two rules of threads: only a function that runs on `host` only can create
+a thread (`PlaceError::ThreadOutsideHost`), and a thread cannot run a part on `host`
+(`PlaceError::ThreadOnHost`). The second rule keeps threads out of the parts that threads run.
 When values can be known by fewer places, the projection will need to know which places know each value.
 The place checker will then return a new representation instead of `()`.
 
@@ -97,6 +104,10 @@ It uses the number of variables of a part to store their values in a `Vec`.
 The interpreter also takes an output writer (`&mut impl Write`).
 `print` writes to it.
 The command line passes stdout, and the unit tests pass a `Vec<u8>` to check the output.
+A `thread(f@a)` expression runs the part of `f` on `a` and keeps what it prints.
+A `join` writes it to the output, so the output does not depend on when a thread runs.
+Running the part on a real thread is the next step, and what it prints will stay
+buffered until the join.
 
 The AST types are in `src/ast.rs`. They are shared by the parser and the resolver.
 The resolved AST types are in `src/resolved_ast.rs`. They are shared by the resolver and the type checker.

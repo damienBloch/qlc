@@ -108,6 +108,8 @@ pub enum Statement {
     Print(Expression),
     /// Deletes the device that is the value of an expression.
     Delete(Expression),
+    /// Waits for the thread that is the value of an expression.
+    Join(Expression),
     /// Sets `variable` to the value of `value`.
     Let {
         variable: VariableId,
@@ -123,6 +125,9 @@ pub enum Expression {
     Variable(VariableId),
     /// Creates a simulated device.
     NewSimDevice,
+    /// Creates a thread that runs the part of `function` on `place`,
+    /// as in [`crate::resolved_ast::Expression::NewThread`].
+    NewThread { function: FunctionId, place: Place },
 }
 
 /// Panics if `body` does not follow the rules about variables of the module documentation.
@@ -131,7 +136,7 @@ fn check_variables(body: &[Statement], variable_count: usize) {
     let mut is_set = vec![false; variable_count];
     for statement in body {
         match statement {
-            Statement::Print(value) | Statement::Delete(value) => {
+            Statement::Print(value) | Statement::Delete(value) | Statement::Join(value) => {
                 check_variables_read(value, &is_set)
             }
             Statement::Let { variable, value } => {
@@ -155,7 +160,7 @@ fn check_variables(body: &[Statement], variable_count: usize) {
 /// `is_set` tells, for each variable, whether it is set.
 fn check_variables_read(expression: &Expression, is_set: &[bool]) {
     match expression {
-        Expression::Integer(_) | Expression::NewSimDevice => {}
+        Expression::Integer(_) | Expression::NewSimDevice | Expression::NewThread { .. } => {}
         Expression::Variable(variable) => assert!(
             *is_set.get(variable.0).expect(VARIABLE_ID_IN_RANGE),
             "a variable should be set before it is read"

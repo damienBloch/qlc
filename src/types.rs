@@ -9,6 +9,8 @@ pub enum Type {
     Int,
     /// A simulated device.
     SimDevice,
+    /// A thread that runs a part of a function.
+    Thread,
 }
 
 impl Type {
@@ -16,6 +18,7 @@ impl Type {
         match self {
             Type::Int => Kind::Data,
             Type::SimDevice => Kind::Resource,
+            Type::Thread => Kind::Resource,
         }
     }
 }
@@ -25,6 +28,7 @@ impl fmt::Display for Type {
         match self {
             Type::Int => write!(f, "Int"),
             Type::SimDevice => write!(f, "SimDevice"),
+            Type::Thread => write!(f, "Thread"),
         }
     }
 }
@@ -50,5 +54,10 @@ mod tests {
     #[test]
     fn sim_device_is_a_resource() {
         assert_eq!(Type::SimDevice.kind(), Kind::Resource);
+    }
+
+    #[test]
+    fn thread_is_a_resource() {
+        assert_eq!(Type::Thread.kind(), Kind::Resource);
     }
 }

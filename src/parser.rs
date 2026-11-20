@@ -9,12 +9,14 @@
 //! places           = place | "@" "(" identifier { "," identifier } ")"
 //! place            = "@" identifier
 //! block            = "{" statement* "}"
-//! statement        = print | delete | let
+//! statement        = print | delete | join | let
 //! print            = "print" "(" expression ")" ";"
 //! delete           = "delete" "(" expression ")" ";"
+//! join             = "join" "(" expression ")" ";"
 //! let              = "let" identifier "=" expression ";"
-//! expression       = integer | identifier | sim_device
+//! expression       = integer | identifier | sim_device | thread
 //! sim_device       = "sim_device" "(" ")"
+//! thread           = "thread" "(" identifier "@" identifier ")"
 //! ```
 
 use std::fmt;
@@ -142,27 +144,32 @@ impl<'a> Parser<'a> {
         match self.peek() {
             Some(Token::Print) => self.parse_print(),
             Some(Token::Delete) => self.parse_delete(),
+            Some(Token::Join) => self.parse_join(),
             Some(Token::Let) => self.parse_let(),
             found => Err(unexpected("statement", found)),
         }
     }
 
     fn parse_print(&mut self) -> Result<Statement, ParseError> {
-        self.expect(&Token::Print)?;
-        self.expect(&Token::OpenParen)?;
-        let value = self.parse_expression()?;
-        self.expect(&Token::CloseParen)?;
-        self.expect(&Token::Semicolon)?;
-        Ok(Statement::Print(value))
+        Ok(Statement::Print(self.parse_call(&Token::Print)?))
     }
 
     fn parse_delete(&mut self) -> Result<Statement, ParseError> {
-        self.expect(&Token::Delete)?;
+        Ok(Statement::Delete(self.parse_call(&Token::Delete)?))
+    }
+
+    fn parse_join(&mut self) -> Result<Statement, ParseError> {
+        Ok(Statement::Join(self.parse_call(&Token::Join)?))
+    }
+
+    /// Parses `keyword "(" expression ")" ";"` and returns the expression.
+    fn parse_call(&mut self, keyword: &Token) -> Result<Expression, ParseError> {
+        self.expect(keyword)?;
         self.expect(&Token::OpenParen)?;
         let value = self.parse_expression()?;
         self.expect(&Token::CloseParen)?;
         self.expect(&Token::Semicolon)?;
-        Ok(Statement::Delete(value))
+        Ok(value)
     }
 
     fn parse_let(&mut self) -> Result<Statement, ParseError> {
@@ -182,6 +189,14 @@ impl<'a> Parser<'a> {
                 self.expect(&Token::OpenParen)?;
                 self.expect(&Token::CloseParen)?;
                 Ok(Expression::NewSimDevice)
+            }
+            Some(Token::Thread) => {
+                self.expect(&Token::OpenParen)?;
+                let function = self.expect_identifier()?;
+                self.expect(&Token::At)?;
+                let place = self.expect_identifier()?;
+                self.expect(&Token::CloseParen)?;
+                Ok(Expression::NewThread { function, place })
             }
             found => Err(unexpected("expression", found)),
         }
@@ -585,6 +600,39 @@ mod tests {
             Err(ParseError::UnexpectedToken {
                 expected: "`)`".to_string(),
                 found: Token::Identifier("ab".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn thread_of_the_part_of_a_function() {
+        assert_eq!(
+            parse_body("fn main() { let t = thread(work@a); }"),
+            Ok(vec![let_statement(
+                "t",
+                Expression::NewThread {
+                    function: "work".to_string(),
+                    place: "a".to_string(),
+                }
+            )])
+        );
+    }
+
+    #[test]
+    fn join_of_a_variable() {
+        assert_eq!(
+            parse_body("fn main() { join(t); }"),
+            Ok(vec![Statement::Join(variable("t"))])
+        );
+    }
+
+    #[test]
+    fn thread_without_a_place_is_an_error() {
+        assert_eq!(
+            parse_source("fn main() { let t = thread(work); }"),
+            Err(ParseError::UnexpectedToken {
+                expected: "`@`".to_string(),
+                found: Token::CloseParen,
             })
         );
     }

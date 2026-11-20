@@ -23,7 +23,7 @@ There are no comments.
 
 | Token       | Form                                                                 |
 |-------------|----------------------------------------------------------------------|
-| keyword     | `fn`, `let`, `print`, `delete`, `sim_device`                         |
+| keyword     | `fn`, `let`, `print`, `delete`, `sim_device`, `thread`, `join`       |
 | identifier  | an ASCII letter or `_`, followed by ASCII letters, digits or `_`; not a keyword |
 | integer     | one or more ASCII digits, in base 10                                 |
 | punctuation | `(`, `)`, `{`, `}`, `[`, `]`, `;`, `=`, `,`, `@`                     |
@@ -41,12 +41,14 @@ place_parameters = "[" place { "," place } "]"
 places           = place | "@" "(" identifier { "," identifier } ")"
 place            = "@" identifier
 block            = "{" statement* "}"
-statement        = print | delete | let
+statement        = print | delete | join | let
 print            = "print" "(" expression ")" ";"
 delete           = "delete" "(" expression ")" ";"
+join             = "join" "(" expression ")" ";"
 let              = "let" identifier "=" expression ";"
-expression       = integer | identifier | sim_device
+expression       = integer | identifier | sim_device | thread
 sim_device       = "sim_device" "(" ")"
+thread           = "thread" "(" identifier "@" identifier ")"
 ```
 
 A program that does not follow this grammar is rejected.
@@ -56,7 +58,8 @@ A program that does not follow this grammar is rejected.
 - A program must have exactly one function named `main`.
 - Two functions cannot have the same name.
 - Functions have no parameters, and there is no way to call a function.
-  Only `main` runs. The rules of this document still apply to every function.
+  The only way to run another function is to create a thread for one of its parts.
+  The rules of this document still apply to every function.
 - Each function is checked on its own.
 
 ## Places
@@ -94,8 +97,32 @@ fn hello[@a, @b]@(a, b)() {
 }
 ```
 
-Only `main` runs, and it runs on `host`. So the code of a function that runs on other places is checked,
-but it does not run yet.
+### Threads
+
+A **part** of a function is its code on one of the places it runs on.
+`thread(f@a)` creates a thread that runs the part of the function `f` on its place `a`.
+
+- `f` is a function of the program. It can be defined before or after the `thread` expression.
+  Any other name is an error.
+- `a` is a place of the header of `f`, not of the function that contains the expression.
+  It must be one of the places `f` runs on. Otherwise the program is rejected.
+- Only a function that runs on `host` only can create a thread.
+- A thread cannot run the part of a function on `host`.
+
+```text
+fn work[@a]@a() {
+    print(1);
+}
+
+fn main() {
+    let t = thread(work@a);   // the part of `work` on `a` runs in a thread
+    print(2);
+    join(t);                  // waits for the thread
+}
+```
+
+So `main` runs on `host`, and the code of a function that runs on other places runs
+only in a thread. A function that runs on `host` other than `main` never runs.
 
 ## Variables
 
@@ -120,6 +147,7 @@ Each value has a type. Each type has a kind: **Data** or **Resource**.
 |-------------|----------|-----------------------------------------------------------|
 | `Int`       | Data     | signed 64-bit integers                                    |
 | `SimDevice` | Resource | simulated devices, which have no operations other than creation and deletion |
+| `Thread`    | Resource | threads that run one part of a function                   |
 
 The type of each expression:
 
@@ -127,6 +155,7 @@ The type of each expression:
 |---------------|----------------------------------------|
 | integer       | `Int`                                  |
 | `sim_device()`| `SimDevice`                            |
+| `thread(f@a)` | `Thread`                               |
 | identifier    | the type of the variable it refers to  |
 
 The type of a variable is the type of the expression of its `let`.
@@ -137,6 +166,7 @@ The statements accept these types. Any other type is an error.
 |-------------|------------------------|
 | `print(e);` | `Int`                  |
 | `delete(e);`| `SimDevice`            |
+| `join(e);`  | `Thread`               |
 | `let x = e;`| any type               |
 
 ## Resources
@@ -144,7 +174,8 @@ The statements accept these types. Any other type is an error.
 A value of kind Resource is used exactly once.
 
 - Reading a variable whose type is of kind Resource **moves** its value.
-  For example, `delete(d);` and `let e = d;` both move the value of `d`.
+  For example, `delete(d);` and `let e = d;` both move the value of `d`,
+  and `join(t);` moves the value of `t`.
 - A variable cannot be read after its value is moved.
 - The value of each variable whose type is of kind Resource must be moved
   before the end of its function.
@@ -184,11 +215,16 @@ The statements of `main` are executed one after the other, in order.
 | `let x = e;`  | evaluates `e` and sets `x` to its value                             |
 | `print(e);`   | evaluates `e` and writes its value in base 10, followed by a line feed, to the output |
 | `delete(e);`  | evaluates `e` and deletes the simulated device                      |
+| `join(e);`    | evaluates `e` and waits for the thread                              |
 
 | Expression     | Value                                     |
 |----------------|-------------------------------------------|
 | integer        | the integer                               |
 | `sim_device()` | a new simulated device                    |
+| `thread(f@a)`  | a new thread that runs the part of `f` on `a` |
 | identifier     | the current value of the variable         |
 
 Creating and deleting a simulated device have no visible effect.
+
+What a thread prints is written to the output when the thread is joined,
+so the output of a program does not depend on when its threads run.

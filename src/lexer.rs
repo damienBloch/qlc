@@ -15,6 +15,10 @@ pub enum Token {
     SimDevice,
     /// The `delete` keyword.
     Delete,
+    /// The `thread` keyword.
+    Thread,
+    /// The `join` keyword.
+    Join,
     Identifier(String),
     /// A non-negative integer literal, such as `42`.
     /// Negative numbers will be written with a unary minus, which is not supported yet.
@@ -40,6 +44,8 @@ impl fmt::Display for Token {
             Token::Let => write!(f, "`let`"),
             Token::SimDevice => write!(f, "`sim_device`"),
             Token::Delete => write!(f, "`delete`"),
+            Token::Thread => write!(f, "`thread`"),
+            Token::Join => write!(f, "`join`"),
             Token::Identifier(name) => write!(f, "identifier `{name}`"),
             Token::Integer(value) => write!(f, "integer `{value}`"),
             Token::OpenParen => write!(f, "`(`"),
@@ -138,6 +144,8 @@ fn keyword_or_identifier(word: String) -> Token {
         "let" => Token::Let,
         "sim_device" => Token::SimDevice,
         "delete" => Token::Delete,
+        "thread" => Token::Thread,
+        "join" => Token::Join,
         _ => Token::Identifier(word),
     }
 }
