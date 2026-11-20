@@ -1,4 +1,4 @@
-//! The typed AST. The type checker produces it and the interpreter runs it.
+//! The typed AST. The type checker produces it. The linearity checker and the projection consume it.
 //!
 //! It is the resolved AST of a program whose types have been checked.
 //! Each variable has a name and a type.

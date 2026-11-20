@@ -2,7 +2,8 @@
 //!
 //! The work is split in stages. Each stage consumes the output of the previous one:
 //! source text -> [`lexer`] -> tokens -> [`parser`] -> AST -> [`resolver`] -> resolved AST
-//! -> [`typechecker`] -> typed AST -> [`linearity`] check -> [`interpreter`].
+//! -> [`typechecker`] -> typed AST -> [`linearity`] check -> [`projection`] -> parts IR
+//! -> [`interpreter`].
 //! See `docs/architecture.md` for details.
 
 pub mod ast;
@@ -10,6 +11,8 @@ pub mod interpreter;
 pub mod lexer;
 pub mod linearity;
 pub mod parser;
+pub mod parts_ir;
+pub mod projection;
 pub mod resolved_ast;
 pub mod resolver;
 pub mod typechecker;
@@ -48,6 +51,7 @@ pub fn run_source(source: &str, output: &mut impl Write) -> Result<(), Error> {
     let program = resolver::resolve(program).map_err(Error::Resolve)?;
     let program = typechecker::check(program).map_err(Error::Type)?;
     linearity::check(&program).map_err(Error::Linearity)?;
+    let program = projection::project(&program);
     interpreter::run(&program, output);
     Ok(())
 }
