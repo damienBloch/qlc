@@ -2,11 +2,12 @@
 //!
 //! The previous stages check the program, so running it cannot fail.
 //!
-//! A thread runs its part when it is created, and what the part prints
-//! is written to the output when the thread is joined.
-//! Running the part on a real thread is the next step.
+//! Each thread of the program runs its part on a thread of the computer.
+//! What a part prints is kept until its thread is joined,
+//! so the output does not depend on when the threads run.
 
 use std::io::Write;
+use std::thread::{self, Scope, ScopedJoinHandle};
 
 use crate::parts_ir::{Expression, Part, Place, Program, Statement};
 
@@ -14,43 +15,54 @@ use crate::parts_ir::{Expression, Part, Place, Program, Statement};
 /// What the program prints is written to `output`.
 pub fn run(program: &Program, output: &mut impl Write) {
     let main = program.function(program.main());
-    run_part(
-        main.part(Place::Host),
-        program,
-        &mut Threads::default(),
-        output,
-    );
+    // The scope ends when `main` ends, so every thread of the program is finished by then.
+    thread::scope(|scope| {
+        run_part(
+            main.part(Place::Host),
+            program,
+            scope,
+            &mut Threads::default(),
+            output,
+        );
+    });
 }
 
-/// Runs `part`. `threads` contains the threads that are not joined yet.
-fn run_part(part: &Part, program: &Program, threads: &mut Threads, output: &mut dyn Write) {
+/// Runs `part`. `scope` is where its threads run,
+/// and `threads` contains the threads that are not joined yet.
+fn run_part<'scope, 'env>(
+    part: &'env Part,
+    program: &'env Program,
+    scope: &'scope Scope<'scope, 'env>,
+    threads: &mut Threads<'scope>,
+    output: &mut dyn Write,
+) {
     // The value of each variable, indexed by its id. `None` until the variable is set.
     let mut variables = vec![None; part.variable_count()];
     for statement in part.body() {
         match statement {
             Statement::Print(expression) => {
-                match evaluate(expression, &variables, program, threads) {
+                match evaluate(expression, &variables, program, scope, threads) {
                     Value::Int(value) => writeln!(output, "{value}")
                         .expect("writing the program output should succeed"),
                     _ => panic!("the type checker should ensure that `print` gets an `Int`"),
                 }
             }
             Statement::Delete(expression) => {
-                match evaluate(expression, &variables, program, threads) {
+                match evaluate(expression, &variables, program, scope, threads) {
                     Value::SimDevice => {}
                     _ => panic!("the type checker should ensure that `delete` gets a `SimDevice`"),
                 }
             }
             Statement::Join(expression) => {
-                match evaluate(expression, &variables, program, threads) {
+                match evaluate(expression, &variables, program, scope, threads) {
                     Value::Thread(thread) => output
-                        .write_all(&threads.take(thread))
+                        .write_all(&threads.join(thread))
                         .expect("writing the program output should succeed"),
                     _ => panic!("the type checker should ensure that `join` gets a `Thread`"),
                 }
             }
             Statement::Let { variable, value } => {
-                let value = evaluate(value, &variables, program, threads);
+                let value = evaluate(value, &variables, program, scope, threads);
                 *variables.get_mut(variable.0).expect(VARIABLE_ID_IN_RANGE) = Some(value);
             }
         }
@@ -59,12 +71,14 @@ fn run_part(part: &Part, program: &Program, threads: &mut Threads, output: &mut 
 
 /// Returns the value of `expression`.
 /// `variables` contains the value of each variable of its part, or `None` if it is not set.
-/// `threads` contains the threads that are not joined yet.
-fn evaluate(
+/// `scope` is where the threads of the part run,
+/// and `threads` contains the threads that are not joined yet.
+fn evaluate<'scope, 'env>(
     expression: &Expression,
     variables: &[Option<Value>],
-    program: &Program,
-    threads: &mut Threads,
+    program: &'env Program,
+    scope: &'scope Scope<'scope, 'env>,
+    threads: &mut Threads<'scope>,
 ) -> Value {
     match expression {
         Expression::Integer(value) => Value::Int(*value),
@@ -75,9 +89,20 @@ fn evaluate(
             .expect("`parts_ir::Part::new` should ensure that a variable is set before it is read"),
         Expression::NewThread { function, place } => {
             let part = program.function(*function).part(*place);
-            let mut part_output = Vec::new();
-            run_part(part, program, threads, &mut part_output);
-            Value::Thread(threads.add(part_output))
+            let handle = scope.spawn(|| {
+                let mut part_output = Vec::new();
+                // The place checker ensures that a part run by a thread creates no thread,
+                // so this part starts with no thread of its own.
+                run_part(
+                    part,
+                    program,
+                    scope,
+                    &mut Threads::default(),
+                    &mut part_output,
+                );
+                part_output
+            });
+            Value::Thread(threads.add(handle))
         }
     }
 }
@@ -92,27 +117,34 @@ enum Value {
     Thread(ThreadId),
 }
 
-/// The threads of a program that are not joined yet.
+/// The threads of a part that are not joined yet.
 #[derive(Default)]
-struct Threads {
-    /// What each thread printed, until it is joined, indexed by its [`ThreadId`].
-    outputs: Vec<Option<Vec<u8>>>,
+struct Threads<'scope> {
+    /// Each thread that is not joined yet, indexed by its [`ThreadId`].
+    /// A thread gives what it printed when it is joined.
+    handles: Vec<Option<ScopedJoinHandle<'scope, Vec<u8>>>>,
 }
 
-impl Threads {
-    /// Adds a thread that printed `output` and returns its id.
-    fn add(&mut self, output: Vec<u8>) -> ThreadId {
-        self.outputs.push(Some(output));
-        ThreadId(self.outputs.len() - 1)
+impl<'scope> Threads<'scope> {
+    /// Adds the thread `handle` and returns its id.
+    fn add(&mut self, handle: ScopedJoinHandle<'scope, Vec<u8>>) -> ThreadId {
+        self.handles.push(Some(handle));
+        ThreadId(self.handles.len() - 1)
     }
 
-    /// Returns what the thread `thread` printed, and removes it.
-    fn take(&mut self, thread: ThreadId) -> Vec<u8> {
-        self.outputs
+    /// Waits for the thread `thread` and returns what it printed.
+    fn join(&mut self, thread: ThreadId) -> Vec<u8> {
+        let handle = self
+            .handles
             .get_mut(thread.0)
-            .expect("a thread id should refer to a thread of the program")
+            .expect("a thread id should refer to a thread of the part")
             .take()
-            .expect("the linearity checker should ensure that a thread is joined once")
+            .expect("the linearity checker should ensure that a thread is joined once");
+        // A part only panics if qlc has a bug.
+        // The panic is raised again here, so that the host reports it.
+        handle
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
     }
 }
 

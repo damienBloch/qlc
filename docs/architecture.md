@@ -104,10 +104,12 @@ It uses the number of variables of a part to store their values in a `Vec`.
 The interpreter also takes an output writer (`&mut impl Write`).
 `print` writes to it.
 The command line passes stdout, and the unit tests pass a `Vec<u8>` to check the output.
-A `thread(f@a)` expression runs the part of `f` on `a` and keeps what it prints.
-A `join` writes it to the output, so the output does not depend on when a thread runs.
-Running the part on a real thread is the next step, and what it prints will stay
-buffered until the join.
+A `thread(f@a)` expression runs the part of `f` on `a` on a thread of the computer
+and keeps what the part prints.
+A `join` waits for the thread and writes it to the output,
+so the output does not depend on when a thread runs.
+No thread outlives `main`.
+A panic in a part is raised again in the host, so a bug in qlc is still reported.
 
 The AST types are in `src/ast.rs`. They are shared by the parser and the resolver.
 The resolved AST types are in `src/resolved_ast.rs`. They are shared by the resolver and the type checker.

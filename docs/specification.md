@@ -226,5 +226,6 @@ The statements of `main` are executed one after the other, in order.
 
 Creating and deleting a simulated device have no visible effect.
 
+A thread runs its part at the same time as the code that created it.
 What a thread prints is written to the output when the thread is joined,
 so the output of a program does not depend on when its threads run.
